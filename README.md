@@ -36,16 +36,15 @@ waiting for the engine.
 Browser behaviour:
 
 - Listen on each finalized reply; autoplay for completed turns; a transport bar
-  that shows the live waveform of the audio being played the same way the
-  dictation bar shows the microphone, with previous/next sentence, pause/resume,
-  stop, and elapsed/total time. The waveform is the scrub surface: click or drag
-  to jump anywhere in the reply (the chunk is fetched around the target, so a
-  missed section resumes mid-sentence instead of replaying from the top), with
-  Left/Right, PageUp/PageDown, Home and End on the keyboard;
-  the spoken sentence is highlighted in the reply (Custom Highlight API, with a
-  data-attribute fallback), and a settings panel carries server, model, voice,
-  rate, autoplay, and the highlight switch. Highlighting is paint-only: turning
-  it off never hides the transport.
+  in the archived player's shape: previous/next sentence, pause/resume, a plain
+  range for the seek (click, drag, keyboard), a rate select, the clock as
+  `m:ss / m:ss` that replays the current sentence when clicked, and close. A
+  jump fetches the chunk around the target, so a missed section resumes
+  mid-sentence instead of replaying from the top. The live waveform stays where
+  the archive had it: the dictation bar. The spoken sentence is highlighted in
+  the reply (Custom Highlight API, with a data-attribute fallback), and a
+  settings panel carries server, model, voice, rate, autoplay, and the highlight
+  switch. Highlighting is paint-only: turning it off never hides the transport.
 - Dictation records in the page, transcodes to 16 kHz mono WAV, and inserts the
   transcript at the caret it had when recording started. One take at a time; an
   unmount discards the take instead of transcribing it; a second stop cannot

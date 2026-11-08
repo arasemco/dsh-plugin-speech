@@ -37,7 +37,11 @@ Browser behaviour:
 
 - Listen on each finalized reply; autoplay for completed turns; a transport bar
   that shows the live waveform of the audio being played the same way the
-  dictation bar shows the microphone, with pause/resume, elapsed time, and stop;
+  dictation bar shows the microphone, with previous/next sentence, pause/resume,
+  stop, and elapsed/total time. The waveform is the scrub surface: click or drag
+  to jump anywhere in the reply (the chunk is fetched around the target, so a
+  missed section resumes mid-sentence instead of replaying from the top), with
+  Left/Right, PageUp/PageDown, Home and End on the keyboard;
   the spoken sentence is highlighted in the reply (Custom Highlight API, with a
   data-attribute fallback), and a settings panel carries server, model, voice,
   rate, autoplay, and the highlight switch. Highlighting is paint-only: turning

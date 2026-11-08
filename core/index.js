@@ -71,6 +71,25 @@ export function apply (ctx, config = {}) {
   const protocol = createProtocol(ctx, options)
 
   /**
+   * Keep one log payload under the wire budget without ever parsing a string it
+   * just cut: oversized details become `{ truncated }` plus their JSON prefix.
+   * @param value - the client-supplied detail, if any.
+   * @returns A bounded plain value, or undefined.
+   */
+  function bounded (value) {
+    if (value === undefined) return undefined
+    let text
+    try {
+      text = JSON.stringify(value)
+    } catch {
+      return undefined
+    }
+    if (typeof text !== 'string') return undefined
+    if (text.length <= 2000) return JSON.parse(text)
+    return { truncated: true, json: text.slice(0, 1900) }
+  }
+
+  /**
    * Apply one client log post.
    * @param req - node request.
    * @param res - node response.
@@ -89,7 +108,7 @@ export function apply (ctx, config = {}) {
     const component = typeof entry?.component === 'string' && protocol.isComponent(entry.component) ? entry.component : 'core'
     const event = typeof entry?.event === 'string' ? entry.event.slice(0, 40) : 'client-event'
     const detail = entry?.detail !== null && typeof entry?.detail === 'object' ? entry.detail : undefined
-    protocol.note(component, level, event, detail === undefined ? undefined : JSON.parse(JSON.stringify(detail).slice(0, 2000)))
+    protocol.note(component, level, event, bounded(detail))
     res.writeHead(204, { 'cache-control': 'no-store' })
     res.end()
   }

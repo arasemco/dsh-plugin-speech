@@ -321,6 +321,25 @@ test('a volatile config field is read live, without re-applying the row', async 
   }
 })
 
+test('an oversized log detail is truncated, not rejected', async () => {
+  const plugin = await mountAudio({ rows: ['core'] })
+  try {
+    const response = await fetch(`${plugin.origin}/audio/log`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ component: 'core', level: 'info', event: 'huge', detail: { message: 'x'.repeat(5000) } }),
+    })
+    assert.equal(response.status, 204, 'a long detail must not fail its own post')
+    const log = await (await fetch(`${plugin.origin}/audio/log?tail=5`)).json()
+    const entry = log.entries.find((row) => row.event === 'huge')
+    assert.ok(entry !== undefined, 'the entry lands in the log')
+    assert.equal(entry.detail.truncated, true, 'the payload is marked truncated')
+    assert.ok(entry.detail.json.length <= 1900, 'the JSON prefix stays inside the budget')
+  } finally {
+    await plugin.close()
+  }
+})
+
 test('the shared log filters by component and level, and clears', async () => {
   const plugin = await mountAudio({ rows: ['core', 'tts', 'stt', 'status'] })
   try {

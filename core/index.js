@@ -37,7 +37,7 @@ const COMPONENT = {
  * `optionsOf`, which clamps every value the row ever sees.
  */
 export const Config = z.object({
-  endpoints: z.array(z.any()).default(DEFAULTS.endpoints).description('Extra audio servers that are not configured model providers'),
+  endpoints: z.array(z.any()).default(DEFAULTS.endpoints).description('Audio servers to offer besides the local ones: remote engines, and anything that is not a configured model provider'),
   discoveryTtlMs: z.natural().default(DEFAULTS.discoveryTtlMs).description('How long a discovery result is reused, in milliseconds').volatile(),
   failureTtlMs: z.natural().default(DEFAULTS.failureTtlMs).description('How long a provider that failed its probe is left alone, in milliseconds'),
   probeTimeoutMs: z.natural().default(DEFAULTS.probeTimeoutMs).description('Upper bound for one capability probe, in milliseconds'),

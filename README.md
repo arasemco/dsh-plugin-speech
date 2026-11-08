@@ -80,7 +80,13 @@ curl -s -X POST http://127.0.0.1:3080/audio/echo \
 Discovery is capability-based, not name-based: a provider is offered when the
 audio route answers at all, every model it lists is offered (audio.cpp declares
 `task: "tts"`, Ollama speaks from models that declare nothing), and declaration
-only decides ordering. A server whose whole catalogue declares itself TTS ranks
+only decides ordering.
+
+Discovery probes only endpoints on this machine or the local network — loopback,
+link-local, and RFC 1918/4193 addresses — because the probe spends the profile's
+credential on a provider configured for text. A remote engine is probed when the
+`audio-core` row lists it in `endpoints`, which is also how a non-provider audio
+server is added. A server whose whole catalogue declares itself TTS ranks
 after the servers that may actually transcribe.
 
 ## Install

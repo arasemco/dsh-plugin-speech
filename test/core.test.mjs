@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { isLocalEndpoint } from '../lib/protocol.js'
 import { fakeEngine, mountAudio } from './harness.mjs'
 
 /** Provider profiles keyed by provider id, as the profile stores them. */
@@ -84,6 +85,35 @@ test('a provider that speaks without declaring TTS models is offered', async () 
   } finally {
     await plugin.close()
     await engine.close()
+  }
+})
+
+test('only endpoints on this machine or the local network are classified local', () => {
+  for (const url of [
+    'http://127.0.0.1:8080/v1',
+    'http://localhost:11434/v1',
+    'http://192.168.1.48:8080/v1',
+    'http://10.1.2.3/v1',
+    'http://172.20.3.4/v1',
+    'http://[::1]:8080/v1',
+    'http://127.0.0.1:9/v1',
+  ]) {
+    assert.equal(isLocalEndpoint(url), true, url)
+  }
+  for (const url of ['https://api.deepseek.com/v1', 'https://api.openai.com/v1', 'http://8.8.8.8/v1']) {
+    assert.equal(isLocalEndpoint(url), false, url)
+  }
+})
+
+test('a configured cloud provider is not probed', async () => {
+  const plugin = await mountAudio({ providers: { cloud: { baseURL: 'https://api.deepseek.com/v1' } } })
+  try {
+    assert.deepEqual((await (await fetch(`${plugin.origin}/tts/info`)).json()).servers, [])
+    const log = await (await fetch(`${plugin.origin}/audio/log?level=debug&tail=200`)).json()
+    assert.ok(log.entries.some((entry) => entry.event === 'provider-skipped' && entry.detail.provider === 'cloud'),
+      'the skipped provider is reported')
+  } finally {
+    await plugin.close()
   }
 })
 

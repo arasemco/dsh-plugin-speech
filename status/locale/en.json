@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Bundle inventory",
+    "description": "Reports which components of this bundle are mounted and speaks a sentence back through dictation"
+  }
+}

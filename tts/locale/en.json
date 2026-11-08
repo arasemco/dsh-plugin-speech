@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Read replies aloud",
+    "description": "Speaks a reply through the discovered engine into a seekable player, sentence by sentence"
+  }
+}

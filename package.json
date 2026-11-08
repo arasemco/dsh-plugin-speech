@@ -1,37 +1,54 @@
 {
   "name": "dsh-plugin-speech",
-  "description": "Read replies aloud and dictate prompts: OpenAI-compatible speech through the profile's configured model providers",
+  "description": "Speech for the Web GUI in one bundle: the shared OpenAI audio protocol, read-aloud, dictation, and a component inventory \u2014 four switchable components",
   "version": "0.1.7",
   "private": true,
   "type": "module",
-  "main": "index.js",
+  "main": "core/index.js",
   "exports": {
-    ".": "./index.js",
+    ".": "./core/index.js",
+    "./core": "./core/index.js",
+    "./core/locale/*.json": "./core/locale/*.json",
     "./tts": "./tts/index.js",
+    "./tts/locale/*.json": "./tts/locale/*.json",
     "./stt": "./stt/index.js",
+    "./stt/locale/*.json": "./stt/locale/*.json",
+    "./status": "./status/index.js",
+    "./status/locale/*.json": "./status/locale/*.json",
     "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
-    "index.js",
-    "tts/index.js",
-    "stt/index.js",
-    "lib/audio.js",
-    "lib/client.js",
-    "lib/http.js",
+    "README.md",
     "cordis.patch.yml",
-    "README.md"
+    "core/index.js",
+    "core/locale/*.json",
+    "lib/client.js",
+    "lib/config.js",
+    "lib/http.js",
+    "lib/protocol.js",
+    "locale/*.json",
+    "status/index.js",
+    "status/locale/*.json",
+    "stt/index.js",
+    "stt/locale/*.json",
+    "tts/index.js",
+    "tts/locale/*.json"
   ],
   "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
     "client": {
       "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
     }
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.18.5"
   },
   "engines": {
     "dsh": "0.2.2-rc.1"
-  },
-  "license": "MIT"
+  }
 }

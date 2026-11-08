@@ -1,112 +1,174 @@
+---
+description: "Speech for the DSH Web GUI in one bundle, as four switchable components: the shared OpenAI audio protocol, read-aloud, dictation, and a component inventory."
+kind: "package-bundle"
+---
+
 # dsh-plugin-speech
 
-Read replies aloud and dictate prompts in the DeepSeek Harness Web GUI, through
-the OpenAI-compatible audio API of the model providers your profile already
-configures.
+One package, one install, **four components**. The bundle carries a single
+OpenAI-compatible audio protocol layer — provider discovery, the synthesis and
+transcription calls, one shared event log — and three consumers on top of it.
+This package exists to test the multi-component shape of a DSH bundle: every
+component is a separate Loader row with its own switch on the Plugins page,
+while the machinery they share is written once.
 
-One package, three loads:
+| Row id | Component | Owns |
+|---|---|---|
+| `audio-core` | Audio protocol | Discovery of the configured providers for each direction, the wire calls, `/audio/log`, the component registry |
+| `audio-tts` | Read replies aloud | `/tts/info`, `/tts/speak`, `/tts/cast`, the multi-voice prompt section |
+| `audio-stt` | Dictation | `/stt/info`, `/stt/transcribe` |
+| `audio-status` | Bundle inventory | `/audio/status` (mounted components, provider summary), `/audio/echo` (round-trip self-test) |
 
-| Row | Owns |
-|---|---|
-| `speech` | The audio engine — provider discovery, the wire calls, selection — and the browser half. It provides `speechAudio`; this row MUST be the bare package name, because the shell finds a package's browser half only from a row whose specifier is the package itself. |
-| `speech-tts` | `GET /tts/info`, `POST /tts/speak` → audio/wav; the Listen control, transport bar, and read-aloud settings panel. |
-| `speech-stt` | `GET /stt/info`, `POST /stt/transcribe` → `{ text }`; the composer microphone, level bar, and dictation panel. |
+`audio-core` names the package itself; the other three name subpaths
+(`dsh-plugin-speech/tts`, …). Each row is its own module file, so no module-level
+state is shared between components — the surfaces reach the protocol through the
+`audioProtocol` service that `audio-core` provides.
 
-Switching `speech-tts` or `speech-stt` off answers 404 on its routes and leaves
-the other direction untouched. Switching `speech` off leaves both surface rows
-waiting for the engine.
+## Layout
 
-## Why it is safe next to the GUI
+One package, four row modules, and the shared modules they import:
 
-- **No credentials to unconfigured routes.** Only providers whose profile sets an
-  explicit `baseURL` are probed. An adapter's shipped cloud default is never
-  contacted, so an unconfigured provider's endpoint and key are never used.
-- **The browser never reaches an engine.** Both halves call the same-origin
-  `/tts/*` and `/stt/*` routes; CORS, LAN exposure, and mixed content stay out.
-- **Every route is fenced.** A cross-site request and a foreign content type are
-  refused before any work happens; bodies are bounded.
-- **Discovery degrades.** One pass at a time; a provider whose model list stops
-  answering is kept from the previous result instead of being dropped for the
-  whole failure TTL; only a "no such route" answer is cached as a refusal.
-- **Voice fan-out is capped** (12 models per server, 4 concurrent), so a provider
-  listing hundreds of models cannot turn one probe into hundreds of requests.
-- **Bounded responses.** An engine answer over 32 MiB is refused, and upstream
-  401/403/429 map to distinct errors instead of a generic 400.
+```text
+core/index.js        audio-core    provides audioProtocol, mounts /audio/log
+tts/index.js         audio-tts     /tts/info, /tts/speak, /tts/cast
+stt/index.js         audio-stt     /stt/info, /stt/transcribe
+status/index.js      audio-status  /audio/status, /audio/echo
+lib/protocol.js      the engine: discovery, wire calls, event log, component registry
+lib/http.js          JSON responses, bounded bodies, the route-table dispatcher
+lib/config.js        the config readers every row clamps through
+lib/client.js        the browser half — one bundle, because the shell evaluates it as a script
+{core,tts,stt,status}/locale/en.json + zh.json   the row title and description, per component
+```
 
-Browser behaviour:
+Every row reuses the same HTTP plumbing, the same config readers, and the same
+protocol engine; nothing about a server, model, or voice is baked into any of
+them. The browser half keeps the mirror image: one panel chrome (anchor
+placement, outside-click, Escape), one chip row, one field renderer, and one
+selection resolver for both bands.
 
-- Listen on each finalized reply; autoplay for completed turns; a transport bar
-  in the archived player's shape: previous/next sentence, pause/resume, a plain
-  range for the seek (click, drag, keyboard), a rate select, the clock as
-  `m:ss / m:ss` that replays the current sentence when clicked, and close. A
-  jump fetches the chunk around the target, so a missed section resumes
-  mid-sentence instead of replaying from the top. The live waveform stays where
-  the archive had it: the dictation bar. The spoken sentence is highlighted in
-  the reply (Custom Highlight API, with a data-attribute fallback), and a
-  settings panel carries server, model, voice, rate, autoplay, and the highlight
-  switch. Highlighting is paint-only: turning it off never hides the transport.
-- Dictation records in the page, transcodes to 16 kHz mono WAV, and inserts the
-  transcript at the caret it had when recording started. One take at a time; an
-  unmount discards the take instead of transcribing it; a second stop cannot
-  transcribe twice.
+## Components and their switches
 
-Deliberately absent: inventory/status/echo routes, event logs, the multi-voice
-cast experiment, per-row configuration pages, voice catalogs, and an audio cache.
-Configuration is the profile patch, which is one source of truth.
+Each row is independent. Switch `audio-tts` off and the Listen control and
+player disappear from the browser, `/tts/*` answers 404, and dictation keeps
+working untouched; switch `audio-core` off and the three consumers wait for the
+service, mounting again the moment it is back. The browser asks
+`/audio/status` once and mounts only the halves the Host lists — a failed probe
+mounts both rather than hiding UI.
+
+`/audio/echo` speaks a sentence through the read-aloud engine and transcribes the
+returned WAV back through dictation: one click in the read-aloud panel, or
+
+```sh
+curl -s -X POST http://127.0.0.1:3080/audio/echo \
+  -H 'content-type: application/json' \
+  -d '{"text":"The audio bundle is reading this sentence and hearing it back."}'
+```
+
+## Routes
+
+| Route | Method | Answers |
+|---|---|---|
+| `/audio/log` | GET / POST / DELETE | The bundle's one event log; entries carry `component`, filter by `level` and `component` |
+| `/audio/status` | GET | Mounted components, their routes, provider discovery summary, log counts |
+| `/audio/echo` | POST | `{ text }` → `{ transcript, speakMs, transcribeMs, … }` |
+| `/tts/info` | GET | Speech servers, their models and voices, defaults |
+| `/tts/speak` | POST | `{ text, server?, model?, voice?, speed? }` → `audio/wav` |
+| `/tts/cast` | GET / POST | The multi-voice experiment flag the Host mirrors into a prompt section |
+| `/stt/info` | GET | Providers that accept transcriptions, their models, defaults |
+| `/stt/transcribe` | POST | WAV in → `{ text }` via `<provider>/audio/transcriptions` |
+
+Discovery is capability-based, not name-based: a provider is offered when the
+audio route answers at all, every model it lists is offered (audio.cpp declares
+`task: "tts"`, Ollama speaks from models that declare nothing), and declaration
+only decides ordering. A server whose whole catalogue declares itself TTS ranks
+after the servers that may actually transcribe.
 
 ## Install
 
 ```sh
-dsh plugin --profile web add /path/to/plugin/speech
+dsh plugin --profile web add <spec>
 ```
 
-The package declares `dsh.bundle.patch`, so the install composes the three rows
-without hand-editing the profile.
+where `<spec>` is the published package, a git URL, or `file:/path/to/dsh-plugin-speech`
+for a local checkout. The package declares `dsh.bundle.patch`, so the install
+composes the four rows without hand-editing the profile.
+
+This package supersedes `dsh-plugin-tts` and `dsh-plugin-stt`: it owns the same
+`/tts/*` and `/stt/*` routes, and the webserver rejects a duplicate route at
+boot. Remove those two bundles from the profile before adding this one.
 
 ## Configuration
 
-Each row reads the profile patch:
+Each row publishes a schemastery `Config`, so the settings service has a form for
+it and the Plugins screen gives that component a **Configure** page: open
+*Plugins → Audio*, press Configure on a component, and change the same fields
+the patch accepts. The page writes the profile's own `cordis.patch.yml` (the
+user layer) as an id-targeted override of that row, then the Loader reconciles
+the row live — no restart.
+
+The file stays the source of truth, so either way of editing shows up in the
+other: an override made by hand appears in the page as a field with a Reset
+control, and a Reset removes the override and re-inherits the row's default.
+
+The fields the page edits are `.volatile()` config fields — the only kind the
+settings service publishes — and the rows read them at use time, so saving in the
+page reaches the running row without a restart.
+
+Nothing about this machine is baked into the package; machine-specific values
+belong in the profile's own patch, for example:
 
 ```yaml
-- id: speech
+- id: audio-core
   config:
-    discoveryTtlMs: 15000      # successful discovery reuse
-    failureTtlMs: 300000       # a refused route is retried after this
-    probeTimeoutMs: 8000       # one probe/model-list request
-    speakTimeoutMs: 120000
-    transcribeTimeoutMs: 300000
-    maxResponseBytes: 33554432
-    voiceModels: 12
-    voiceConcurrency: 4
-    endpoints: []              # extra { id, name, baseURL, apiKeyEnv } servers
-- id: speech-tts
+    voiceCatalog:
+      - /home/agent/stacks/ai/audio-cpp-server.json
+    endpoints: []
+- id: audio-tts
   config:
-    server: null               # preferred provider id
-    model: null                # preferred model id
-    voice: null                # preferred voice id
-    speed: 1
+    server: audio-cpp
+    model: kokoro
+    voice: af_heart
     speeds: [0.75, 1, 1.25, 1.5, 2]
-    maxChars: 4000
-- id: speech-stt
+    cacheBytes: 25165824
+- id: audio-stt
   config:
-    server: null
-    model: null
-    language: null             # null/auto lets the model detect it
-    maxAudioBytes: 33554432
+    server: ollama
+    model: lfm3-audio:latest
+    language: auto
 ```
+
+| Row | Config | On the page |
+|---|---|---|
+| `audio-core` | `endpoints`, `discoveryTtlMs`, `failureTtlMs`, `probeTimeoutMs`, `logLimit`, `speakTimeoutMs`, `transcribeTimeoutMs`, `voiceCatalog` | voice catalog paths, discovery TTL, log size |
+| `audio-tts` | `server`, `model`, `voice`, `speed`, `speeds`, `maxChars`, `cacheBytes` | server, model, voice (from discovery), speed, max characters |
+| `audio-stt` | `server`, `model`, `language`, `maxAudioBytes` | server, model, language (from discovery), max recording size |
+| `audio-status` | `sample` | the round-trip sentence |
+
+A field left empty on the page is cleared from the user layer, so the row
+inherits its default again — that is what the Reset control does explicitly.
+
+## Tests
+
+```sh
+npm install --no-save --no-package-lock react@18 react-dom@18 jsdom
+node --test test/client.test.mjs test/core.test.mjs test/host.test.mjs test/bundle.test.mjs
+node --test test/live.test.mjs   # the deployment's real engines; skips when absent
+```
+
+`core.test.mjs` drives discovery against fake engines, `host.test.mjs` the
+routes, the shared log, the inventory, and the component boundaries,
+`client.test.mjs` renders both halves in jsdom with the status-gated slot
+registration, `bundle.test.mjs` checks the bundle contract (one exported module
+per row, exactly one bare-package row so the browser half is found, a display
+title for every component), and `live.test.mjs` talks to `audio.cpp` and Ollama,
+including the speak-and-hear round trip.
 
 ## Requirements
 
-A provider that implements `POST /audio/speech` (for example audio.cpp with
-Kokoro) and/or `POST /audio/transcriptions` (for example Ollama with a
-speech-capable model), with an explicit `baseURL` in the profile. The package
-ships no engine and no model.
-
-## Test
-
-Dependency-free; the browser half is loaded the way the shell loads it and its
-logic and slot wiring are driven without React.
-
-```sh
-node --test test/host.test.mjs test/client.test.mjs
-```
+- A provider implementing `POST /audio/speech` (audio.cpp with Kokoro) and one
+  implementing `POST /audio/transcriptions` (Ollama with `lfm3-audio`, or the
+  same engine when it serves ASR). Both are ordinary model providers configured
+  in the profile; this package ships no model and no recognizer.
+- The Host half does all audio I/O, so the browser never reaches the engine
+  directly: no CORS, the engines stay on loopback, and any browser that can open
+  the GUI can speak and listen.

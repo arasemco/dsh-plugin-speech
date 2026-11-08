@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Dictation",
+    "description": "Records the microphone, transcribes it with the discovered provider, and inserts the text"
+  }
+}

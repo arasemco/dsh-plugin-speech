@@ -1,473 +1,360 @@
 /**
- * Host-side tests for dsh-plugin-speech: the engine against fake OpenAI audio
- * servers, and the two route rows driven end-to-end over a real HTTP listener.
+ * The bundle's surface: which routes each row owns, what the shared log holds,
+ * what the inventory reports, and that the four components really are
+ * independent — one switched off leaves the others serving.
  */
 
 import assert from 'node:assert/strict'
-import { createServer } from 'node:http'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-import { DEFAULTS, baseUrl, createAudio, number } from '../lib/audio.js'
-import { apply as applyEngine } from '../index.js'
-import { apply as applyTts } from '../tts/index.js'
-import { apply as applyStt } from '../stt/index.js'
+import { apply as core, inject as coreInject } from '../core/index.js'
+import { apply as tts, inject as ttsInject } from '../tts/index.js'
+import { apply as stt, inject as sttInject } from '../stt/index.js'
+import { apply as status, inject as statusInject } from '../status/index.js'
+import { fakeEngine, mountAudio, wavBytes } from './harness.mjs'
 
-/* ------------------------------------------------------------------ harness */
+/** A stand-in for a `.volatile()` config reference: a value the settings service updates in place. */
+function volatileRef (initial) {
+  let current = initial
+  const reference = {
+    get: () => current,
+    [Symbol.for('cosmokit.volatile.write')]: (next) => { current = next },
+  }
+  return { reference, set: (next) => reference[Symbol.for('cosmokit.volatile.write')](next) }
+}
 
-/**
- * A fake OpenAI-compatible audio server.
- * @param spec - route behaviour, models, voices, delays, and response sizes.
- * @returns its base URL plus recorded requests and a close handle.
- */
-async function fakeEngine (spec = {}) {
-  const received = []
-  const server = createServer((req, res) => {
-    const url = new URL(req.url ?? '/', 'http://x')
-    const path = url.pathname.replace(/^\/v1(?=\/|$)/, '')
-    const chunks = []
-    req.on('data', (chunk) => chunks.push(chunk))
-    req.on('end', () => {
-      const body = Buffer.concat(chunks)
-      received.push({ path, method: req.method, type: req.headers['content-type'] ?? '', auth: req.headers.authorization ?? null })
-      const delay = spec.delayMs ?? 0
-      setTimeout(() => {
-        if (path === '/models') {
-          if (spec.modelsStatus !== undefined && spec.modelsStatus !== 200) {
-            res.writeHead(spec.modelsStatus, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'models failed' } }))
-            return
-          }
-          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
-            data: (spec.models ?? ['kokoro']).map((id) => ({ id })),
-          }))
-          return
-        }
-        if (path === '/audio/voices') {
-          if (spec.voices === false) {
-            res.writeHead(404).end()
-            return
-          }
-          const model = url.searchParams.get('model')
-          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
-            voices: spec.voicesByModel?.[model] ?? [],
-          }))
-          return
-        }
-        if (path === '/audio/speech') {
-          if (spec.speech === false) {
-            res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'no speech' } }))
-            return
-          }
-          if (spec.speechStatus !== undefined && spec.speechStatus !== 200) {
-            res.writeHead(spec.speechStatus, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'refused' } }))
-            return
-          }
-          if (spec.speechBytes !== undefined) {
-            res.writeHead(200, { 'content-type': 'audio/wav' }).end(Buffer.alloc(spec.speechBytes, 1))
-            return
-          }
-          res.writeHead(200, { 'content-type': 'audio/wav' }).end(Buffer.from('RIFF....WAVEfmt '))
-          return
-        }
-        if (path === '/audio/transcriptions') {
-          if (spec.transcriptions === false) {
-            res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'no transcriptions' } }))
-            return
-          }
-          if (spec.transcriptStatus !== undefined && spec.transcriptStatus !== 200) {
-            res.writeHead(spec.transcriptStatus, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'refused' } }))
-            return
-          }
-          const multipart = String(req.headers['content-type'] ?? '').startsWith('multipart/form-data')
-          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
-            text: multipart ? (spec.transcript ?? '  transcribed text  ') : 'not multipart',
-          }))
-          return
-        }
-        res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'no route' } }))
-      }, delay)
-    })
+/** Provider profiles keyed by provider id, as the profile stores them. */
+const providersOf = (engine, id = 'speech') => ({ [id]: { api: 'openai-completions', baseURL: engine.baseURL } })
+
+test('each component declares the Host services it needs', () => {
+  assert.deepEqual(coreInject, ['webServer', 'settings', 'llm'], 'the protocol row owns discovery')
+  assert.deepEqual(ttsInject, ['webServer', 'audioProtocol'], 'the surfaces reach the protocol through its service')
+  assert.deepEqual(sttInject, ['webServer', 'audioProtocol'])
+  assert.deepEqual(statusInject, ['webServer', 'audioProtocol'])
+})
+
+test('the inventory reports the components the profile composed', async () => {
+  const engine = await fakeEngine({ models: [{ id: 'voice-a', task: 'tts' }], voices: { 'voice-a': ['af_heart'] } })
+  const plugin = await mountAudio({ providers: providersOf(engine) })
+  try {
+    const body = await (await fetch(`${plugin.origin}/audio/status`)).json()
+    assert.equal(body.name, 'dsh-plugin-audio')
+    assert.equal(body.version, JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version)
+    assert.deepEqual(body.components.map((component) => component.id), ['core', 'tts', 'stt', 'status'], 'declaration order')
+    assert.deepEqual(body.components[0].routes, ['/audio/log'])
+    assert.deepEqual(body.components[1].routes, ['/tts/info', '/tts/speak', '/tts/cast'])
+    assert.deepEqual(body.components[3].routes, ['/audio/status', '/audio/echo'])
+    assert.deepEqual(body.providers, { tts: { servers: null }, stt: { servers: null } }, 'nothing is probed by the inventory')
+    assert.ok(body.components.every((component) => typeof component.mountedAt === 'number'))
+  } finally {
+    await plugin.close()
+    await engine.close()
+  }
+})
+
+test('the inventory reports what discovery has learned so far', async () => {
+  const engine = await fakeEngine({ models: [{ id: 'voice-a', task: 'tts' }], voices: { 'voice-a': ['af_heart'] } })
+  const plugin = await mountAudio({ providers: providersOf(engine) })
+  try {
+    await fetch(`${plugin.origin}/tts/info`)
+    await fetch(`${plugin.origin}/stt/info`)
+    const body = await (await fetch(`${plugin.origin}/audio/status`)).json()
+    assert.deepEqual(body.providers, { tts: { servers: ['speech'] }, stt: { servers: ['speech'] } })
+    assert.ok(body.log.info > 0, 'the log counts travel with the report')
+  } finally {
+    await plugin.close()
+    await engine.close()
+  }
+})
+
+test('a component the profile left out is absent from the inventory and answers nothing', async () => {
+  const engine = await fakeEngine({ models: [{ id: 'voice-a', task: 'tts' }], voices: { 'voice-a': ['af_heart'] } })
+  const without = await mountAudio({ providers: providersOf(engine), rows: ['core', 'stt', 'status'] })
+  try {
+    const body = await (await fetch(`${without.origin}/audio/status`)).json()
+    assert.deepEqual(body.components.map((component) => component.id), ['core', 'stt', 'status'], 'only what the profile composed')
+    assert.equal((await fetch(`${without.origin}/tts/info`)).status, 404, 'no tts row, no tts route')
+    assert.equal((await fetch(`${without.origin}/stt/info`)).status, 200)
+  } finally {
+    await without.close()
+  }
+  const only = await mountAudio({ providers: providersOf(engine), rows: ['core', 'tts'] })
+  try {
+    assert.equal((await fetch(`${only.origin}/stt/info`)).status, 404)
+    assert.equal((await fetch(`${only.origin}/audio/status`)).status, 404, 'the inventory is its own component')
+    assert.equal((await fetch(`${only.origin}/tts/info`)).status, 200)
+  } finally {
+    await only.close()
+    await engine.close()
+  }
+})
+
+test('the round trip works while both surface rows are switched off', async () => {
+  /* The point of the split: the protocol row is the engine, the surfaces are
+     consumers, and the demo row composes them without either surface. */
+  const engine = await fakeEngine({
+    models: [{ id: 'voice-a', task: 'tts' }, { id: 'lfm3-audio' }],
+    voices: { 'voice-a': ['af_heart'] },
+    transcript: 'the bundle heard itself',
   })
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
-  return {
-    baseURL: `${baseUrl(`http://127.0.0.1:${server.address().port}`)}/v1`,
-    received,
-    close: () => new Promise((resolve) => server.close(resolve)),
-  }
-}
-
-/**
- * A fake host context whose provider directory lists the given providers.
- * A provider entry is `{ baseURL }` for a configured endpoint, or
- * `{ defaultBaseURL }` for an adapter default the profile does not point at.
- * @param providers - provider key to profile facts.
- * @returns a Cordis-shaped context.
- */
-function engineCtx (providers) {
-  const settings = {
-    providers: Object.fromEntries(Object.entries(providers).map(([key, facts]) => [key, facts.baseURL === undefined ? {} : { baseURL: facts.baseURL, ...(facts.apiKeyEnv === undefined ? {} : { apiKeyEnv: facts.apiKeyEnv }) }])),
-  }
-  return {
-    llm: {
-      listConfigurableProviders: () => Object.entries(providers).map(([provider, facts]) => ({
-        provider,
-        displayName: provider,
-        settingsNs: 'llm-pi-ai',
-        settingsPath: ['providers', provider],
-        ...(facts.defaultBaseURL === undefined ? {} : { defaultBaseURL: facts.defaultBaseURL }),
-      })),
-    },
-    settings: { describe: () => [{ ns: 'llm-pi-ai', value: settings }] },
-  }
-}
-
-/** Engine options with the TTL knocked out, so a test drives discovery directly. */
-function options (overrides = {}) {
-  return { ...DEFAULTS, discoveryTtlMs: 0, failureTtlMs: 300000, probeTimeoutMs: 2000, ...overrides }
-}
-
-/**
- * Mount the three rows on one fake host and serve their routes over HTTP.
- * @param providers - provider directory the engine reads.
- * @param config - per-row config: `speech`, `tts`, `stt`.
- * @returns the origin plus a close handle.
- */
-async function mountSpeech (providers, config = {}) {
-  const routes = new Map()
-  const services = {}
-  const make = () => ({
-    effect: (fn) => fn(),
-    provide: (name, value) => { services[name] = value; return () => { delete services[name] } },
-    webServer: {
-      register: (route) => {
-        if (routes.has(route.path)) throw new Error(`duplicate route ${route.path}`)
-        routes.set(route.path, route)
-        return () => routes.delete(route.path)
-      },
-    },
-    llm: { listConfigurableProviders: () => engineCtx(providers).llm.listConfigurableProviders() },
-    settings: { describe: () => engineCtx(providers).settings.describe() },
-    logger: { warn () {}, error () {}, debug () {} },
-  })
-  applyEngine(make(), config.speech ?? {})
-  const ttsCtx = make()
-  ttsCtx.speechAudio = services.speechAudio
-  applyTts(ttsCtx, config.tts ?? {})
-  const sttCtx = make()
-  sttCtx.speechAudio = services.speechAudio
-  applyStt(sttCtx, config.stt ?? {})
-  const server = createServer((req, res) => {
-    const url = new URL(req.url ?? '/', 'http://127.0.0.1')
-    const match = [...routes.entries()]
-      .filter(([path]) => url.pathname === path || url.pathname.startsWith(`${path}/`))
-      .sort((left, right) => right[0].length - left[0].length)[0]
-    if (match === undefined) {
-      res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { code: 'route' } }))
-      return
-    }
-    match[1].handler(req, res)
-  })
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
-  return {
-    origin: `http://127.0.0.1:${server.address().port}`,
-    close: () => new Promise((resolve) => server.close(resolve)),
-  }
-}
-
-/** POST/GET one route on the mounted host. */
-async function request (origin, path, init = {}) {
-  const response = await fetch(`${origin}${path}`, init)
-  const buffer = Buffer.from(await response.arrayBuffer())
-  let json
+  const plugin = await mountAudio({ providers: providersOf(engine), rows: ['core', 'status'] })
   try {
-    json = JSON.parse(buffer.toString('utf8'))
-  } catch {
-    json = undefined
-  }
-  return { response, buffer, json }
-}
-
-/* ------------------------------------------------------------------ engine */
-
-test('only a provider with an explicit baseURL is probed', async () => {
-  const configured = await fakeEngine({ speech: true, models: ['kokoro'] })
-  const cloudDefault = await fakeEngine({ speech: true, models: ['tts-1'] })
-  try {
-    const audio = createAudio(engineCtx({
-      local: { baseURL: configured.baseURL },
-      cloud: { defaultBaseURL: cloudDefault.baseURL },
-    }), options())
-    const servers = await audio.discover('tts')
-    assert.deepEqual(servers.map((server) => server.id), ['local'])
-    assert.equal(cloudDefault.received.length, 0, 'the adapter default endpoint is never contacted')
-  } finally {
-    await configured.close()
-    await cloudDefault.close()
-  }
-})
-
-test('a credential named by the profile authenticates every probe', async () => {
-  const engine = await fakeEngine({ speech: true, models: ['kokoro'] })
-  process.env.DSH_TEST_AUDIO_KEY = 'secret'
-  try {
-    const audio = createAudio(engineCtx({ local: { baseURL: engine.baseURL, apiKeyEnv: 'DSH_TEST_AUDIO_KEY' } }), options())
-    await audio.discover('tts')
-    const probed = engine.received.filter((entry) => entry.path !== '/audio/voices')
-    assert.ok(probed.length > 0)
-    for (const entry of probed) assert.equal(entry.auth, 'Bearer secret')
-  } finally {
-    delete process.env.DSH_TEST_AUDIO_KEY
-    await engine.close()
-  }
-})
-
-test('a provider that refuses the speech route is cached as a refusal', async () => {
-  const engine = await fakeEngine({ speech: false })
-  try {
-    const audio = createAudio(engineCtx({ local: { baseURL: engine.baseURL } }), options({ discoveryTtlMs: 0 }))
-    assert.deepEqual(await audio.discover('tts'), [])
-    assert.equal(engine.received.length, 1, 'the refusal is cached, not re-probed')
-    assert.deepEqual(await audio.discover('tts'), [])
-    assert.equal(engine.received.length, 1)
-  } finally {
-    await engine.close()
-  }
-})
-
-test('a transient model-list failure keeps the last good provider', async () => {
-  let failing = false
-  const engine = createServer((req, res) => {
-    if (failing) {
-      res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'busy' } }))
-      return
-    }
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'kokoro' }] }))
-  })
-  await new Promise((resolve) => server_listen(engine, resolve))
-  const base = `http://127.0.0.1:${engine.address().port}/v1`
-  try {
-    const audio = createAudio(engineCtx({ local: { baseURL: base } }), options())
-    const first = await audio.discover('tts')
-    assert.deepEqual(first.map((server) => server.id), ['local'])
-    failing = true
-    const second = await audio.discover('tts', true)
-    assert.deepEqual(second.map((server) => server.id), ['local'], 'the provider survives a busy model list')
-    assert.equal(second[0].models[0].id, 'kokoro', 'the last good models are kept')
-  } finally {
-    await new Promise((resolve) => engine.close(resolve))
-  }
-})
-
-function server_listen (server, resolve) {
-  server.listen(0, '127.0.0.1', resolve)
-}
-
-test('concurrent discovery runs one pass', async () => {
-  const engine = await fakeEngine({ speech: true, models: ['kokoro'], delayMs: 40 })
-  try {
-    const audio = createAudio(engineCtx({ local: { baseURL: engine.baseURL } }), options())
-    const [left, right] = await Promise.all([audio.discover('tts'), audio.discover('tts')])
-    assert.equal(left, right, 'the in-flight result is shared')
-    const models = engine.received.filter((entry) => entry.path === '/models')
-    assert.equal(models.length, 1, 'the model list is fetched once')
-  } finally {
-    await engine.close()
-  }
-})
-
-test('a model named without its server routes across providers', async () => {
-  const left = await fakeEngine({ speech: true, models: ['kokoro'] })
-  const right = await fakeEngine({ speech: true, models: ['other-tts'] })
-  try {
-    const audio = createAudio(engineCtx({
-      left: { baseURL: left.baseURL },
-      right: { baseURL: right.baseURL },
-    }), options())
-    await audio.discover('tts')
-    const chosen = audio.resolve('tts', { model: 'other-tts' })
-    assert.equal(chosen.server.id, 'right')
-    assert.equal(chosen.model.id, 'other-tts')
-  } finally {
-    await left.close()
-    await right.close()
-  }
-})
-
-test('a response larger than the engine budget is refused', async () => {
-  const engine = await fakeEngine({ speech: true, models: ['kokoro'], speechBytes: 4096 })
-  try {
-    const audio = createAudio(engineCtx({ local: { baseURL: engine.baseURL } }), options({ maxResponseBytes: 1024 }))
-    await audio.discover('tts')
-    await assert.rejects(
-      () => audio.speak(engine.baseURL, 'hello', 'kokoro', null, 1),
-      (error) => error.status === 502 && error.code === 'too-large',
-    )
-  } finally {
-    await engine.close()
-  }
-})
-
-/* ------------------------------------------------------------------ routes */
-
-test('/tts/info reports servers, defaults, rates, and the text ceiling', async () => {
-  const engine = await fakeEngine({ speech: true, models: ['kokoro', 'plain'], voicesByModel: { kokoro: ['af_heart', 'af_bella'] } })
-  const host = await mountSpeech({ local: { baseURL: engine.baseURL } }, { tts: { maxChars: 1234 } })
-  try {
-    const { response, json } = await request(host.origin, '/tts/info?refresh=1')
-    assert.equal(response.status, 200)
-    assert.deepEqual(json.servers.map((server) => server.id), ['local'])
-    assert.deepEqual(json.servers[0].models[0], { id: 'kokoro', voices: ['af_heart', 'af_bella'] })
-    assert.equal(json.defaults.server, 'local')
-    assert.equal(json.defaults.model, 'kokoro')
-    assert.equal(json.defaults.voice, 'af_heart')
-    assert.deepEqual(json.speeds, [0.75, 1, 1.25, 1.5, 2])
-    assert.equal(json.maxChars, 1234)
-  } finally {
-    await host.close()
-    await engine.close()
-  }
-})
-
-test('/tts/speak answers audio with the selected engine in headers', async () => {
-  const engine = await fakeEngine({ speech: true, models: ['kokoro'] })
-  const host = await mountSpeech({ local: { baseURL: engine.baseURL } }, { tts: { voice: 'af_bella' } })
-  try {
-    const { response, buffer } = await request(host.origin, '/tts/speak', {
+    const response = await fetch(`${plugin.origin}/audio/echo`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text: ' hello there ' }),
+      body: JSON.stringify({ text: 'one sentence through both directions' }),
     })
     assert.equal(response.status, 200)
-    assert.equal(response.headers.get('content-type'), 'audio/wav')
-    assert.equal(response.headers.get('x-tts-server'), 'local')
-    assert.equal(response.headers.get('x-tts-model'), 'kokoro')
-    assert.deepEqual(buffer, Buffer.from('RIFF....WAVEfmt '))
-    const spoken = engine.received.filter((entry) => entry.path === '/audio/speech')
-    assert.ok(spoken.length > 0)
+    const body = await response.json()
+    assert.equal(body.input, 'one sentence through both directions')
+    assert.equal(body.transcript, 'the bundle heard itself')
+    assert.equal(body.server, 'speech')
+    assert.ok(body.bytes > 0)
+    assert.equal(typeof body.speakMs, 'number')
+    assert.equal(typeof body.transcribeMs, 'number')
+    assert.deepEqual(body.heardBy, { server: 'speech', model: 'lfm3-audio' })
+    const upload = engine.received.filter((row) => row.path === '/audio/transcriptions' && row.type.startsWith('multipart/form-data'))
+    assert.equal(upload.length, 1, 'the synthesized audio is what dictation received')
   } finally {
-    await host.close()
+    await plugin.close()
     await engine.close()
   }
 })
 
-test('/tts/speak validates the request', async () => {
-  const engine = await fakeEngine({ speech: true, models: ['kokoro'] })
-  const host = await mountSpeech({ local: { baseURL: engine.baseURL } }, { tts: { maxChars: 10 } })
+test('the round trip speaks a sample when the request names no text', async () => {
+  const engine = await fakeEngine({ models: [{ id: 'voice-a', task: 'tts' }, { id: 'lfm3-audio' }], voices: { 'voice-a': ['af_heart'] } })
+  const plugin = await mountAudio({ providers: providersOf(engine) })
   try {
-    const wrongType = await request(host.origin, '/tts/speak', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' })
-    assert.equal(wrongType.response.status, 415)
-    const empty = await request(host.origin, '/tts/speak', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '' }),
-    })
-    assert.equal(empty.response.status, 400)
-    const tooLong = await request(host.origin, '/tts/speak', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'x'.repeat(11) }),
-    })
-    assert.equal(tooLong.response.status, 413)
+    const body = await (await fetch(`${plugin.origin}/audio/echo`, { method: 'POST' })).json()
+    assert.match(body.input, /The audio bundle is reading this sentence/)
+    assert.equal(body.voice, 'af_heart')
   } finally {
-    await host.close()
+    await plugin.close()
     await engine.close()
   }
 })
 
-test('every route refuses a cross-site request', async () => {
-  const host = await mountSpeech({}, {})
+test('the round trip refuses when a direction has no provider', async () => {
+  const engine = await fakeEngine({ transcriptions: false, voices: false, models: [{ id: 'voice-a', task: 'tts' }] })
+  const plugin = await mountAudio({ providers: providersOf(engine) })
   try {
-    const info = await request(host.origin, '/tts/info', {
-      headers: { origin: 'http://evil.example', 'sec-fetch-site': 'cross-site' },
-    })
-    assert.equal(info.response.status, 403)
-    assert.equal(info.json.error.code, 'origin')
-    const speak = await request(host.origin, '/tts/speak', {
+    const response = await fetch(`${plugin.origin}/audio/echo`, { method: 'POST' })
+    assert.equal(response.status, 409)
+    assert.equal((await response.json()).error.code, 'no-speech-model')
+    assert.equal((await fetch(`${plugin.origin}/audio/echo`)).status, 405)
+  } finally {
+    await plugin.close()
+    await engine.close()
+  }
+})
+
+test('read aloud: requests are validated before any engine is called', async () => {
+  const engine = await fakeEngine({ models: [{ id: 'voice-a', task: 'tts' }], voices: { 'voice-a': ['af_heart'] } })
+  const plugin = await mountAudio({ providers: providersOf(engine), config: { tts: { maxChars: 40 } } })
+  try {
+    const missing = await fetch(`${plugin.origin}/tts/speak`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', origin: 'http://evil.example', 'sec-fetch-site': 'cross-site' },
-      body: JSON.stringify({ text: 'hi' }),
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
     })
-    assert.equal(speak.response.status, 403)
-  } finally {
-    await host.close()
-  }
-})
+    assert.equal(missing.status, 400)
+    assert.equal((await missing.json()).error.code, 'text')
 
-test('an upstream auth refusal is reported as a provider failure, not a bad request', async () => {
-  const engine = await fakeEngine({ speech: true, models: ['kokoro'], speechStatus: 401 })
-  const host = await mountSpeech({ local: { baseURL: engine.baseURL } })
-  try {
-    const { response, json } = await request(host.origin, '/tts/speak', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'hi' }),
+    const oversized = await fetch(`${plugin.origin}/tts/speak`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'x'.repeat(41) }),
     })
-    assert.equal(response.status, 502)
-    assert.equal(json.error.code, 'provider-auth')
+    assert.equal(oversized.status, 413)
+
+    assert.equal((await fetch(`${plugin.origin}/tts/speak`)).status, 405)
+    assert.equal((await fetch(`${plugin.origin}/tts/nope`)).status, 404)
+    assert.equal((await fetch(`${plugin.origin}/tts/info`, { method: 'POST' })).status, 405)
   } finally {
-    await host.close()
+    await plugin.close()
     await engine.close()
   }
 })
 
-test('/stt/transcribe forwards the recording and returns the text', async () => {
-  const engine = await fakeEngine({ transcriptions: true, models: ['lfm3-audio'] })
-  const host = await mountSpeech({ local: { baseURL: engine.baseURL } })
+test('read aloud: a stale stored voice falls back to one the model offers', async () => {
+  const engine = await fakeEngine({ models: [{ id: 'voice-a', task: 'tts' }], voices: { 'voice-a': ['af_heart'] } })
+  const plugin = await mountAudio({ providers: providersOf(engine), config: { tts: { voice: 'no_such_voice_xyz' } } })
   try {
-    const info = await request(host.origin, '/stt/info?refresh=1')
-    assert.equal(info.response.status, 200)
-    assert.deepEqual(info.json.servers[0].models, ['lfm3-audio'])
-    const recording = Buffer.alloc(2000, 7)
-    const result = await request(host.origin, '/stt/transcribe?language=en', {
+    const response = await fetch(`${plugin.origin}/tts/speak`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'Fallback still speaks.', voice: 'no_such_voice_xyz' }),
+    })
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('x-tts-model'), 'voice-a')
+  } finally {
+    await plugin.close()
+    await engine.close()
+  }
+})
+
+test('read aloud: identical audio is served from the cache', async () => {
+  const engine = await fakeEngine({ models: [{ id: 'voice-a', task: 'tts' }], voices: { 'voice-a': ['af_heart'] } })
+  const plugin = await mountAudio({ providers: providersOf(engine) })
+  try {
+    const speak = () => fetch(`${plugin.origin}/tts/speak`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'the same line twice', model: 'voice-a', voice: 'af_heart' }),
+    })
+    assert.equal((await speak()).headers.get('x-tts-cache'), 'miss')
+    assert.equal((await speak()).headers.get('x-tts-cache'), 'hit')
+  } finally {
+    await plugin.close()
+    await engine.close()
+  }
+})
+
+test('the multi-voice experiment mirrors its flag and injects one prompt section', async () => {
+  const plugin = await mountAudio({ rows: ['core', 'tts'] })
+  try {
+    const section = plugin.sections.get('dsh-audio-cast')
+    assert.ok(section !== undefined, 'the section is registered')
+    assert.equal(section.order, 950)
+    assert.equal(section.text({}), '', 'the instruction is absent while the experiment is off')
+
+    const posted = await fetch(`${plugin.origin}/tts/cast`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: true }),
+    })
+    assert.equal(posted.status, 200)
+    assert.equal((await posted.json()).enabled, true)
+    assert.match(section.text({}), /Reading aloud with several voices/)
+    assert.match(section.text({}), /Name: sentence/)
+    assert.equal((await (await fetch(`${plugin.origin}/tts/cast`)).json()).enabled, true)
+
+    await fetch(`${plugin.origin}/tts/cast`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: false }),
+    })
+    assert.equal(section.text({}), '', 'turning it off removes the instruction')
+    assert.equal((await fetch(`${plugin.origin}/tts/cast`, { method: 'PUT' })).status, 405)
+  } finally {
+    await plugin.close()
+  }
+})
+
+test('dictation: the recording goes out as multipart and the text comes back', async () => {
+  const engine = await fakeEngine({
+    speech: false,
+    voices: false,
+    models: [{ id: 'llama3.1:8b' }, { id: 'lfm3-audio:latest' }],
+    transcript: '  transcribed by the fake engine  ',
+  })
+  const plugin = await mountAudio({ providers: providersOf(engine, 'ollama') })
+  try {
+    engine.received.length = 0
+    const response = await fetch(`${plugin.origin}/stt/transcribe?server=ollama&model=lfm3-audio:latest&language=en`, {
       method: 'POST',
       headers: { 'content-type': 'audio/wav' },
-      body: recording,
+      body: wavBytes(),
     })
-    assert.equal(result.response.status, 200)
-    assert.equal(result.json.text, 'transcribed text')
-    const forwarded = engine.received.filter((entry) => entry.path === '/audio/transcriptions' && entry.method === 'POST')
-    assert.ok(forwarded.some((entry) => entry.type.startsWith('multipart/form-data')))
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(body.text, 'transcribed by the fake engine')
+    assert.equal(body.server, 'ollama')
+    assert.equal(body.model, 'lfm3-audio:latest')
+    /* The capability probe also hits this route, so count only the real upload. */
+    const uploads = engine.received.filter((row) => row.type.startsWith('multipart/form-data'))
+    assert.equal(uploads.length, 1)
+    assert.match(uploads[0].type, /^multipart\/form-data; boundary=/)
+    const text = uploads[0].body.toString('latin1')
+    assert.match(text, /name="model"[\s\S]*lfm3-audio:latest/)
+    assert.match(text, /name="file"; filename="recording.wav"/)
+    assert.match(text, /name="language"[\s\S]*en/)
+    assert.match(text, /name="response_format"[\s\S]*json/)
   } finally {
-    await host.close()
+    await plugin.close()
     await engine.close()
   }
 })
 
-test('/stt/transcribe validates type and length', async () => {
-  const engine = await fakeEngine({ transcriptions: true, models: ['lfm3-audio'] })
-  const host = await mountSpeech({ local: { baseURL: engine.baseURL } })
+test('dictation: the language hint is omitted when it is auto, and bad bodies are refused', async () => {
+  const engine = await fakeEngine({ speech: false, voices: false, models: [{ id: 'lfm3-audio:latest' }] })
+  const plugin = await mountAudio({ providers: providersOf(engine, 'ollama') })
   try {
-    const wrongType = await request(host.origin, '/stt/transcribe', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
-    })
-    assert.equal(wrongType.response.status, 415)
-    const tiny = await request(host.origin, '/stt/transcribe', {
-      method: 'POST', headers: { 'content-type': 'audio/wav' }, body: Buffer.alloc(100, 1),
-    })
-    assert.equal(tiny.response.status, 400)
+    engine.received.length = 0
+    assert.equal((await fetch(`${plugin.origin}/stt/transcribe?language=auto`, { method: 'POST', body: wavBytes() })).status, 200)
+    const upload = engine.received.filter((row) => row.type.startsWith('multipart/form-data')).at(-1)
+    assert.doesNotMatch(upload.body.toString('latin1'), /name="language"/)
+
+    assert.equal((await fetch(`${plugin.origin}/stt/transcribe`, { method: 'POST', body: Buffer.alloc(0) })).status, 400)
+    const tiny = await fetch(`${plugin.origin}/stt/transcribe`, { method: 'POST', body: wavBytes(0.01) })
+    assert.equal(tiny.status, 400)
+    assert.equal((await tiny.json()).error.code, 'audio')
+    assert.equal((await fetch(`${plugin.origin}/stt/transcribe`)).status, 405)
+    assert.equal((await fetch(`${plugin.origin}/stt/nope`)).status, 404)
   } finally {
-    await host.close()
+    await plugin.close()
     await engine.close()
   }
 })
 
-test('an empty provider list answers a clear refusal', async () => {
-  const host = await mountSpeech({})
+test('a volatile config field is read live, without re-applying the row', async () => {
+  /* A `.volatile()` field reaches the plugin as a reference the settings service
+     updates in place; the row must see the new value without a restart. */
+  const engine = await fakeEngine({ models: [{ id: 'voice-a', task: 'tts' }], voices: { 'voice-a': ['af_heart'] } })
+  const limit = volatileRef(40)
+  const plugin = await mountAudio({ providers: providersOf(engine), config: { tts: { maxChars: limit.reference } } })
   try {
-    const info = await request(host.origin, '/tts/info')
-    assert.deepEqual(info.json.servers, [])
-    const speak = await request(host.origin, '/tts/speak', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'hi' }),
+    const speak = (text) => fetch(`${plugin.origin}/tts/speak`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text, model: 'voice-a', voice: 'af_heart' }),
     })
-    assert.equal(speak.response.status, 409)
-    assert.equal(speak.json.error.code, 'no-speech-model')
+    assert.equal((await speak('x'.repeat(41))).status, 413, 'the initial bound applies')
+    limit.set(4000)
+    assert.equal((await speak('x'.repeat(41))).status, 200, 'the updated bound applies without re-mounting')
+    const info = await (await fetch(`${plugin.origin}/tts/info`)).json()
+    assert.equal(info.maxChars, 4000)
   } finally {
-    await host.close()
+    await plugin.close()
+    await engine.close()
   }
 })
 
-test('unknown paths and methods answer JSON, not HTML', async () => {
-  const host = await mountSpeech({})
+test('the shared log filters by component and level, and clears', async () => {
+  const plugin = await mountAudio({ rows: ['core', 'tts', 'stt', 'status'] })
   try {
-    const unknown = await request(host.origin, '/tts/nope')
-    assert.equal(unknown.response.status, 404)
-    assert.equal(unknown.json.error.code, 'route')
-    const method = await request(host.origin, '/tts/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-    assert.equal(method.response.status, 405)
+    const post = (entry) => fetch(`${plugin.origin}/audio/log`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(entry),
+    })
+    assert.equal((await post({ component: 'tts', level: 'warn', event: 'highlight-miss', detail: { reason: 'no-anchors' } })).status, 204)
+    assert.equal((await post({ component: 'stt', level: 'error', event: 'transcription-failed', detail: { message: 'boom' } })).status, 204)
+    assert.equal((await post({ level: 'info', event: 'unattributed' })).status, 204, 'an unnamed component lands on core')
+
+    const all = await (await fetch(`${plugin.origin}/audio/log?tail=100`)).json()
+    const miss = all.entries.find((entry) => entry.event === 'highlight-miss')
+    assert.equal(miss.component, 'tts')
+    assert.equal(miss.detail.reason, 'no-anchors')
+    assert.ok(all.entries.some((entry) => entry.event === 'ready'), 'each row logs its own startup')
+
+    const ttsOnly = await (await fetch(`${plugin.origin}/audio/log?component=tts`)).json()
+    assert.ok(ttsOnly.entries.length > 0)
+    assert.ok(ttsOnly.entries.every((entry) => entry.component === 'tts'))
+
+    const errorsOnly = await (await fetch(`${plugin.origin}/audio/log?level=error`)).json()
+    assert.ok(errorsOnly.entries.length >= 1)
+    assert.ok(errorsOnly.entries.every((entry) => entry.level === 'error'))
+
+    assert.equal((await fetch(`${plugin.origin}/audio/log?level=nope`)).status, 400)
+    assert.equal((await fetch(`${plugin.origin}/audio/log?component=nope`)).status, 400)
+    assert.equal((await fetch(`${plugin.origin}/audio/log`, { method: 'PUT' })).status, 405)
+
+    const cleared = await (await fetch(`${plugin.origin}/audio/log`, { method: 'DELETE' })).json()
+    assert.ok(cleared.cleared >= 3)
+    assert.deepEqual((await (await fetch(`${plugin.origin}/audio/log`)).json()).entries, [])
   } finally {
-    await host.close()
+    await plugin.close()
   }
 })

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Audio protocol",
+    "description": "Discovers the OpenAI-compatible audio providers, performs the synthesis and transcription calls, and owns the bundle's shared event log"
+  }
+}

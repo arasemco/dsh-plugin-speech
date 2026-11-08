@@ -39,7 +39,7 @@ function rowsOf () {
 const rows = rowsOf()
 
 test('the package declares itself a bundle with a browser half', () => {
-  assert.equal(manifest.name, 'dsh-plugin-audio')
+  assert.equal(manifest.name, 'dsh-plugin-speech')
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
   assert.equal(manifest.dsh.client.platform, 'web')
   assert.equal(manifest.exports['./client'], './lib/client.js')
@@ -60,7 +60,7 @@ test('every row names a module this package exports', () => {
 
 test('exactly one row names the bare package, which is what finds the browser half', () => {
   /* client-modules resolves a row's package manifest only for a specifier that
-     is the package name itself: `dsh-plugin-audio/x` locates no manifest, so a
+     is the package name itself: `dsh-plugin-speech/x` locates no manifest, so a
      bundle whose rows are all subpaths would ship a client half nobody mounts. */
   const bare = rows.filter((row) => row.name === manifest.name)
   assert.equal(bare.length, 1, 'one row must carry the package name')

@@ -39,7 +39,7 @@ test('the inventory reports the components the profile composed', async () => {
   const plugin = await mountAudio({ providers: providersOf(engine) })
   try {
     const body = await (await fetch(`${plugin.origin}/audio/status`)).json()
-    assert.equal(body.name, 'dsh-plugin-audio')
+    assert.equal(body.name, 'dsh-plugin-speech')
     assert.equal(body.version, JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version)
     assert.deepEqual(body.components.map((component) => component.id), ['core', 'tts', 'stt', 'status'], 'declaration order')
     assert.deepEqual(body.components[0].routes, ['/audio/log'])

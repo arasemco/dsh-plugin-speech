@@ -68,7 +68,7 @@ const STT_INFO = {
 
 /** Component inventory the fake Host serves from `/audio/status`. */
 const AUDIO_STATUS = {
-  name: 'dsh-plugin-audio',
+  name: 'dsh-plugin-speech',
   version: '0.0.1',
   components: [
     { id: 'core', title: 'Core', routes: ['/audio/log', '/audio/echo'] },
@@ -135,7 +135,7 @@ function loadBundle (dom, env) {
   )
   const definition = dom.window.__ModuleLoader__.definition
   assert.ok(definition !== undefined, 'bundle must register a module definition')
-  assert.equal(definition.id, 'dsh-plugin-audio')
+  assert.equal(definition.id, 'dsh-plugin-speech')
   return definition.factory(requireShim)
 }
 
@@ -1676,7 +1676,7 @@ test('registers one Plugins-screen configuration page per Host row', async () =>
     `${mod.__internals.PKG}#audio-stt`,
     `${mod.__internals.PKG}#audio-status`,
   ], 'the key is exactly what the plugin manager dispatches')
-  assert.equal(mod.__internals.PKG, 'dsh-plugin-audio')
+  assert.equal(mod.__internals.PKG, 'dsh-plugin-speech')
   dom.window.close()
 })
 

@@ -298,6 +298,46 @@ test('dictation: the language hint is omitted when it is auto, and bad bodies ar
   }
 })
 
+test('refuses a request that another site could have made', async () => {
+  const plugin = await mountAudio({ rows: ['core', 'tts', 'stt', 'status'] })
+  try {
+    const speak = (headers) => fetch(`${plugin.origin}/tts/speak`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ text: 'hello' }),
+    })
+    assert.equal((await speak({ 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' })).status, 403)
+    assert.equal((await speak({ 'content-type': 'application/json', origin: 'https://evil.example' })).status, 403)
+    assert.equal((await fetch(`${plugin.origin}/tts/info`, { headers: { 'sec-fetch-site': 'same-origin' } })).status, 200, 'the page itself still works')
+    assert.equal((await fetch(`${plugin.origin}/tts/info`, { headers: { origin: plugin.origin } })).status, 200, 'a matching origin passes')
+    const form = await fetch(`${plugin.origin}/tts/speak`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'text=hello',
+    })
+    assert.equal(form.status, 415, 'a simple form post is refused')
+  } finally {
+    await plugin.close()
+  }
+})
+
+test('refuses an upload that is not a WAV recording', async () => {
+  const engine = await fakeEngine({ speech: false, voices: false, models: [{ id: 'lfm3-audio:latest' }] })
+  const plugin = await mountAudio({ providers: providersOf(engine, 'ollama') })
+  try {
+    const response = await fetch(`${plugin.origin}/stt/transcribe`, {
+      method: 'POST',
+      headers: { 'content-type': 'audio/wav' },
+      body: Buffer.from('this is not a recording'),
+    })
+    assert.equal(response.status, 400)
+    assert.equal((await response.json()).error.message, 'recording must be a WAV file')
+  } finally {
+    await plugin.close()
+    await engine.close()
+  }
+})
+
 test('a volatile config field is read live, without re-applying the row', async () => {
   /* A `.volatile()` field reaches the plugin as a reference the settings service
      updates in place; the row must see the new value without a restart. */

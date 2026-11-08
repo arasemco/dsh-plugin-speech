@@ -159,7 +159,7 @@ export function apply (ctx, config = {}) {
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
     path: '/audio/log',
-    handler: routes([{ path: '/audio/log', method: '*', handle: logRoute }]),
+    handler: routes([{ path: '/audio/log', method: '*', handle: logRoute, body: 'json' }]),
   }), 'dsh-plugin-speech: /audio/log route')
   ctx.provide('audioProtocol', protocol)
   ctx.effect(() => protocol.registerComponent(COMPONENT), 'dsh-plugin-speech: core component record')

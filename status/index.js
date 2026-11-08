@@ -170,7 +170,7 @@ export function apply (ctx, config = {}) {
 
   const handler = routes([
     { path: '/audio/status', method: 'GET', handle: statusRoute },
-    { path: '/audio/echo', method: 'POST', handle: echoRoute },
+    { path: '/audio/echo', method: 'POST', handle: echoRoute, body: 'json' },
   ])
   for (const path of COMPONENT.routes) {
     ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path, handler }), `dsh-plugin-speech: ${path} route`)

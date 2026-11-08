@@ -130,6 +130,10 @@ export function apply (ctx, config = {}) {
       return bodyError(res, error)
     }
     if (body.length === 0) return json(res, 400, { error: { code: 'body', message: 'no audio received' } })
+    /* The browser transcodes to WAV before uploading; anything else is not a
+       recording this route can forward. */
+    const riff = body.subarray(0, 4).toString('latin1') === 'RIFF' && body.subarray(8, 12).toString('latin1') === 'WAVE'
+    if (!riff) return json(res, 400, { error: { code: 'audio', message: 'recording must be a WAV file' } })
     if (body.length < 1600) return json(res, 400, { error: { code: 'audio', message: 'recording is too short' } })
     try {
       const started = Date.now()
@@ -167,7 +171,7 @@ export function apply (ctx, config = {}) {
     path: '/stt',
     handler: routes([
       { path: '/stt/info', method: 'GET', handle: infoRoute },
-      { path: '/stt/transcribe', method: 'POST', handle: transcribeRoute },
+      { path: '/stt/transcribe', method: 'POST', handle: transcribeRoute, body: 'audio' },
     ]),
   }), 'dsh-plugin-speech: /stt routes')
   ctx.effect(() => protocol.registerComponent(COMPONENT), 'dsh-plugin-speech: stt component record')

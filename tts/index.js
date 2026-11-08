@@ -276,8 +276,8 @@ export function apply (ctx, config = {}) {
     path: '/tts',
     handler: routes([
       { path: '/tts/info', method: 'GET', handle: infoRoute },
-      { path: '/tts/cast', method: '*', handle: castRoute },
-      { path: '/tts/speak', method: 'POST', handle: speakRoute },
+      { path: '/tts/cast', method: '*', handle: castRoute, body: 'json' },
+      { path: '/tts/speak', method: 'POST', handle: speakRoute, body: 'json' },
     ]),
   }), 'dsh-plugin-speech: /tts routes')
   ctx.effect(() => protocol.registerComponent(COMPONENT), 'dsh-plugin-speech: tts component record')

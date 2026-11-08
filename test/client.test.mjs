@@ -1433,6 +1433,37 @@ test('retries the insertion at the current caret when the draft moved', async ()
   dom.window.close()
 })
 
+test('disposing the recorder mid-take discards the recording', async () => {
+  const dom = makeDom()
+  const environment = makeEnvironment()
+  const mod = loadBundle(dom, environment)
+  const restore = useDom(dom)
+  const { createStore, createRecorder } = mod.__internals
+  const settings = createStore({ server: null, model: null, language: 'auto' })
+  const info = createStore({ servers: [{ id: 'ollama', name: 'ollama', models: ['lfm3-audio'] }], defaults: {} })
+  const recorder = createRecorder(settings, info, () => {})
+  const actions = {
+    captureInsertion: () => ({ rev: 1, from: 0, to: 0 }),
+    insertText: (text, span) => {
+      environment.inserts.push({ text, span })
+      return true
+    },
+    setDraft: () => {},
+    persistDraft: () => {},
+  }
+  await act(async () => {
+    await recorder.start({ actions, selection: { server: { id: 'ollama' }, model: 'lfm3-audio', language: 'auto' }, draft: '' })
+  })
+  await act(async () => {
+    recorder.dispose()
+    await new Promise((resolve) => setTimeout(resolve, 60))
+  })
+  assert.equal(environment.inserts.length, 0, 'nothing is inserted after dispose')
+  assert.equal(environment.http.filter((row) => row.url.includes('/stt/transcribe')).length, 0, 'nothing is transcribed')
+  restore()
+  dom.window.close()
+})
+
 test('reports a failed transcription to the host log', async () => {
   const environment = makeEnvironment({ failTranscribe: true })
   const { container, root, restore, dom } = await mountControl(environment)

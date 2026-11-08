@@ -142,7 +142,7 @@ export async function fakeEngine (spec = {}) {
           return
         }
         /* A minimal RIFF header: enough to prove audio came back. */
-        res.writeHead(200, { 'content-type': 'audio/wav' }).end(Buffer.from('RIFF....WAVEfmt '))
+        res.writeHead(200, { 'content-type': spec.speechType ?? 'audio/wav' }).end(Buffer.from('RIFF....WAVEfmt '))
         return
       }
       if (spec.transcriptions !== false && path === '/audio/transcriptions') {

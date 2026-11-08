@@ -298,6 +298,27 @@ test('dictation: the language hint is omitted when it is auto, and bad bodies ar
   }
 })
 
+test('refuses a synthesis answer that is not audio', async () => {
+  const engine = await fakeEngine({
+    models: [{ id: 'voice-a', task: 'tts' }],
+    voices: { 'voice-a': ['af_heart'] },
+    speechType: 'text/html; charset=utf-8',
+  })
+  const plugin = await mountAudio({ providers: providersOf(engine) })
+  try {
+    const response = await fetch(`${plugin.origin}/tts/speak`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'hello', model: 'voice-a', voice: 'af_heart' }),
+    })
+    assert.equal(response.status, 502)
+    assert.match((await response.json()).error.message, /answered text\/html; charset=utf-8 instead of audio/)
+  } finally {
+    await plugin.close()
+    await engine.close()
+  }
+})
+
 test('refuses a request that another site could have made', async () => {
   const plugin = await mountAudio({ rows: ['core', 'tts', 'stt', 'status'] })
   try {

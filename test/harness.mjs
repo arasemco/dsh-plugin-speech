@@ -3,25 +3,23 @@
  * their routes over a real HTTP listener, so a test drives exactly what the
  * Loader composes in a profile.
  *
- * The four rows are applied in declaration order, the way the Loader does:
- * `speech-core` first (it provides `audioProtocol`), then whichever surface rows
- * the case asks for. A row that a case leaves out is simply never applied, which
- * is the same observable state as switching it off on the Plugins page.
+ * The three rows are applied in declaration order, the way the Loader does:
+ * `speech` first (it provides `speechAudio`), then whichever surface rows the
+ * case asks for. A row that a case leaves out is simply never applied, which is
+ * the same observable state as switching it off on the Plugins page.
  */
 
 import { createServer } from 'node:http'
 
-import { apply as applyCore } from '../core/index.js'
+import { apply as applyEngine } from '../index.js'
 import { apply as applyTts } from '../tts/index.js'
 import { apply as applyStt } from '../stt/index.js'
-import { apply as applyStatus } from '../status/index.js'
 
 /** Component id → the module's apply, in the order a profile composes them. */
 const ROWS = {
-  core: applyCore,
+  speech: applyEngine,
   tts: applyTts,
   stt: applyStt,
-  status: applyStatus,
 }
 
 /**
@@ -64,7 +62,7 @@ function fakeContext (routes, services, providers) {
  * @param options - provider profiles, the rows to mount, and per-row config.
  * @returns The bundle origin, a close handle, and the live route table.
  */
-export async function mountAudio ({ providers = {}, rows = ['core', 'tts', 'stt', 'status'], config = {} } = {}) {
+export async function mountAudio ({ providers = {}, rows = ['speech', 'tts', 'stt'], config = {} } = {}) {
   const routes = new Map()
   const services = {}
   const sections = new Map()
@@ -85,8 +83,8 @@ export async function mountAudio ({ providers = {}, rows = ['core', 'tts', 'stt'
       })
       return () => {}
     }
-    /* Only core needs the provider directory; surfaces reach it through the service. */
-    if (id !== 'core') ctx.audioProtocol = services.audioProtocol
+    /* Only the engine needs the provider directory; surfaces reach it through the service. */
+    if (id !== 'speech') ctx.speechAudio = services.speechAudio
     ROWS[id](ctx, { discoveryTtlMs: 0, ...(config[id] ?? {}) })
     mounted.push(id)
   }

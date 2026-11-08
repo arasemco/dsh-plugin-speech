@@ -71,10 +71,9 @@ const AUDIO_STATUS = {
   name: 'dsh-plugin-speech',
   version: '0.0.1',
   components: [
-    { id: 'core', title: 'Core', routes: ['/audio/log', '/audio/echo'] },
+    { id: 'speech', title: 'Engine', routes: ['/audio/log', '/audio/status', '/audio/echo'] },
     { id: 'tts', title: 'Read aloud', routes: ['/tts/info', '/tts/speak', '/tts/cast'] },
     { id: 'stt', title: 'Dictation', routes: ['/stt/info', '/stt/transcribe'] },
-    { id: 'status', title: 'Status', routes: ['/audio/status'] },
   ],
   providers: { tts: { servers: 1 }, stt: { servers: 1 } },
 }
@@ -1581,7 +1580,7 @@ test('a status listing without stt registers no dictation slot and renders no mi
   const environment = makeEnvironment({
     status: {
       ...AUDIO_STATUS,
-      components: AUDIO_STATUS.components.filter((component) => component.id === 'core' || component.id === 'tts'),
+      components: AUDIO_STATUS.components.filter((component) => component.id === 'speech' || component.id === 'tts'),
     },
   })
   const mod = loadBundle(dom, environment)
@@ -1606,7 +1605,7 @@ test('a status listing without tts registers none of the read-aloud slots', asyn
   const environment = makeEnvironment({
     status: {
       ...AUDIO_STATUS,
-      components: AUDIO_STATUS.components.filter((component) => component.id === 'core' || component.id === 'stt'),
+      components: AUDIO_STATUS.components.filter((component) => component.id === 'speech' || component.id === 'stt'),
     },
   })
   const mod = loadBundle(dom, environment)
@@ -1691,7 +1690,7 @@ test('the round-trip test posts /audio/echo and renders the transcript', async (
   const { panel, root, restore } = await openReadPanel(dom, registrations)
 
   const componentNames = [...panel.querySelectorAll('.dsh-tts-component-name')].map((node) => node.textContent)
-  assert.deepEqual(componentNames, ['Core', 'Read aloud', 'Dictation', 'Status'], 'every reported component is listed')
+  assert.deepEqual(componentNames, ['Engine', 'Read aloud', 'Dictation'], 'every reported component is listed')
 
   const echo = roundTripButton(panel)
   assert.ok(echo !== undefined, 'the round-trip button is in the panel')
@@ -1734,10 +1733,9 @@ test('registers one Plugins-screen configuration page per Host row', async () =>
   mod.apply(fakeContext(registrations, []))
   await settle()
   assert.deepEqual(pages(registrations).map((row) => row.spec.key), [
-    `${mod.__internals.PKG}#speech-core`,
+    `${mod.__internals.PKG}#speech`,
     `${mod.__internals.PKG}#speech-tts`,
     `${mod.__internals.PKG}#speech-stt`,
-    `${mod.__internals.PKG}#speech-status`,
   ], 'the key is exactly what the plugin manager dispatches')
   assert.equal(mod.__internals.PKG, 'dsh-plugin-speech')
   dom.window.close()
@@ -1794,13 +1792,13 @@ test('a configuration page renders its fields and writes them back', async () =>
   dom.window.close()
 })
 
-test('the status page edits its sample sentence and reports a refusal', async () => {
+test('the engine page edits its sample sentence and reports a refusal', async () => {
   const dom = makeDom()
   const mod = loadBundle(dom, makeEnvironment())
   const registrations = []
   mod.apply(fakeContext(registrations, []))
   await settle()
-  const page = pages(registrations).find((row) => row.spec.key.endsWith('#speech-status'))
+  const page = pages(registrations).find((row) => row.spec.key.endsWith('#speech'))
   const calls = []
   const form = {
     state: {
@@ -1831,7 +1829,7 @@ test('a configuration page says so when its component is switched off', async ()
   const registrations = []
   mod.apply(fakeContext(registrations, []))
   await settle()
-  const page = pages(registrations).find((row) => row.spec.key.endsWith('#speech-core'))
+  const page = pages(registrations).find((row) => row.spec.key.endsWith('#speech'))
   const { container, root, restore } = await renderConfigPage(dom, page, undefined)
   assert.match(container.textContent, /config\.unavailable/)
   await act(async () => { root.unmount() })

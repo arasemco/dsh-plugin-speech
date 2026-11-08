@@ -1,17 +1,16 @@
 /**
  * The bundle's surface: which routes each row owns, what the shared log holds,
- * what the inventory reports, and that the four components really are
- * independent — one switched off leaves the others serving.
+ * what the inventory reports, and that the three rows really are independent —
+ * one switched off leaves the others serving.
  */
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-import { apply as core, inject as coreInject } from '../core/index.js'
+import { apply as speech, inject as speechInject } from '../index.js'
 import { apply as tts, inject as ttsInject } from '../tts/index.js'
 import { apply as stt, inject as sttInject } from '../stt/index.js'
-import { apply as status, inject as statusInject } from '../status/index.js'
 import { fakeEngine, mountAudio, wavBytes } from './harness.mjs'
 
 /** A stand-in for a `.volatile()` config reference: a value the settings service updates in place. */
@@ -28,10 +27,9 @@ function volatileRef (initial) {
 const providersOf = (engine, id = 'speech') => ({ [id]: { api: 'openai-completions', baseURL: engine.baseURL } })
 
 test('each component declares the Host services it needs', () => {
-  assert.deepEqual(coreInject, ['webServer', 'settings', 'llm'], 'the protocol row owns discovery')
-  assert.deepEqual(ttsInject, ['webServer', 'audioProtocol'], 'the surfaces reach the protocol through its service')
-  assert.deepEqual(sttInject, ['webServer', 'audioProtocol'])
-  assert.deepEqual(statusInject, ['webServer', 'audioProtocol'])
+  assert.deepEqual(speechInject, ['webServer', 'settings', 'llm'], 'the engine row owns discovery, routes and the inventory')
+  assert.deepEqual(ttsInject, ['webServer', 'speechAudio'], 'the surfaces reach the engine through its service')
+  assert.deepEqual(sttInject, ['webServer', 'speechAudio'])
 })
 
 test('the inventory reports the components the profile composed', async () => {
@@ -41,10 +39,9 @@ test('the inventory reports the components the profile composed', async () => {
     const body = await (await fetch(`${plugin.origin}/audio/status`)).json()
     assert.equal(body.name, 'dsh-plugin-speech')
     assert.equal(body.version, JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version)
-    assert.deepEqual(body.components.map((component) => component.id), ['core', 'tts', 'stt', 'status'], 'declaration order')
-    assert.deepEqual(body.components[0].routes, ['/audio/log'])
+    assert.deepEqual(body.components.map((component) => component.id), ['speech', 'tts', 'stt'], 'declaration order')
+    assert.deepEqual(body.components[0].routes, ['/audio/log', '/audio/status', '/audio/echo'])
     assert.deepEqual(body.components[1].routes, ['/tts/info', '/tts/speak', '/tts/cast'])
-    assert.deepEqual(body.components[3].routes, ['/audio/status', '/audio/echo'])
     assert.deepEqual(body.providers, { tts: { servers: null }, stt: { servers: null } }, 'nothing is probed by the inventory')
     assert.ok(body.components.every((component) => typeof component.mountedAt === 'number'))
   } finally {
@@ -70,19 +67,19 @@ test('the inventory reports what discovery has learned so far', async () => {
 
 test('a component the profile left out is absent from the inventory and answers nothing', async () => {
   const engine = await fakeEngine({ models: [{ id: 'voice-a', task: 'tts' }], voices: { 'voice-a': ['af_heart'] } })
-  const without = await mountAudio({ providers: providersOf(engine), rows: ['core', 'stt', 'status'] })
+  const without = await mountAudio({ providers: providersOf(engine), rows: ['speech', 'stt'] })
   try {
     const body = await (await fetch(`${without.origin}/audio/status`)).json()
-    assert.deepEqual(body.components.map((component) => component.id), ['core', 'stt', 'status'], 'only what the profile composed')
+    assert.deepEqual(body.components.map((component) => component.id), ['speech', 'stt'], 'only what the profile composed')
     assert.equal((await fetch(`${without.origin}/tts/info`)).status, 404, 'no tts row, no tts route')
     assert.equal((await fetch(`${without.origin}/stt/info`)).status, 200)
   } finally {
     await without.close()
   }
-  const only = await mountAudio({ providers: providersOf(engine), rows: ['core', 'tts'] })
+  const only = await mountAudio({ providers: providersOf(engine), rows: ['speech', 'tts'] })
   try {
     assert.equal((await fetch(`${only.origin}/stt/info`)).status, 404)
-    assert.equal((await fetch(`${only.origin}/audio/status`)).status, 404, 'the inventory is its own component')
+    assert.equal((await fetch(`${only.origin}/audio/status`)).status, 200, 'the inventory travels with the engine row')
     assert.equal((await fetch(`${only.origin}/tts/info`)).status, 200)
   } finally {
     await only.close()
@@ -91,14 +88,15 @@ test('a component the profile left out is absent from the inventory and answers 
 })
 
 test('the round trip works while both surface rows are switched off', async () => {
-  /* The point of the split: the protocol row is the engine, the surfaces are
-     consumers, and the demo row composes them without either surface. */
+  /* The point of the split: the engine row owns both directions and the
+     round-trip route, the surfaces are consumers, so the demo works without
+     either surface row. */
   const engine = await fakeEngine({
     models: [{ id: 'voice-a', task: 'tts' }, { id: 'lfm3-audio' }],
     voices: { 'voice-a': ['af_heart'] },
     transcript: 'the bundle heard itself',
   })
-  const plugin = await mountAudio({ providers: providersOf(engine), rows: ['core', 'status'] })
+  const plugin = await mountAudio({ providers: providersOf(engine), rows: ['speech'] })
   try {
     const response = await fetch(`${plugin.origin}/audio/echo`, {
       method: 'POST',
@@ -212,7 +210,7 @@ test('read aloud: identical audio is served from the cache', async () => {
 })
 
 test('the multi-voice experiment mirrors its flag and injects one prompt section', async () => {
-  const plugin = await mountAudio({ rows: ['core', 'tts'] })
+  const plugin = await mountAudio({ rows: ['speech', 'tts'] })
   try {
     const section = plugin.sections.get('dsh-audio-cast')
     assert.ok(section !== undefined, 'the section is registered')
@@ -320,7 +318,7 @@ test('refuses a synthesis answer that is not audio', async () => {
 })
 
 test('refuses a request that another site could have made', async () => {
-  const plugin = await mountAudio({ rows: ['core', 'tts', 'stt', 'status'] })
+  const plugin = await mountAudio({ rows: ['speech', 'tts', 'stt'] })
   try {
     const speak = (headers) => fetch(`${plugin.origin}/tts/speak`, {
       method: 'POST',
@@ -383,12 +381,12 @@ test('a volatile config field is read live, without re-applying the row', async 
 })
 
 test('an oversized log detail is truncated, not rejected', async () => {
-  const plugin = await mountAudio({ rows: ['core'] })
+  const plugin = await mountAudio({ rows: ['speech'] })
   try {
     const response = await fetch(`${plugin.origin}/audio/log`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ component: 'core', level: 'info', event: 'huge', detail: { message: 'x'.repeat(5000) } }),
+      body: JSON.stringify({ component: 'speech', level: 'info', event: 'huge', detail: { message: 'x'.repeat(5000) } }),
     })
     assert.equal(response.status, 204, 'a long detail must not fail its own post')
     const log = await (await fetch(`${plugin.origin}/audio/log?tail=5`)).json()
@@ -402,7 +400,7 @@ test('an oversized log detail is truncated, not rejected', async () => {
 })
 
 test('the shared log filters by component and level, and clears', async () => {
-  const plugin = await mountAudio({ rows: ['core', 'tts', 'stt', 'status'] })
+  const plugin = await mountAudio({ rows: ['speech', 'tts', 'stt'] })
   try {
     const post = (entry) => fetch(`${plugin.origin}/audio/log`, {
       method: 'POST',

@@ -1,5 +1,5 @@
 /**
- * Discovery rules of the `speech-core` row against fake engines: which configured
+ * Discovery rules of the `speech` engine row against fake engines: which configured
  * providers become speech servers for each direction, how their models and
  * voices are read, and what happens when a provider is down or is not a speech
  * server at all. The surface rows only forward what this report says.
@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { isLocalEndpoint } from '../lib/protocol.js'
+import { isLocalEndpoint } from '../lib/audio.js'
 import { fakeEngine, mountAudio } from './harness.mjs'
 
 /** Provider profiles keyed by provider id, as the profile stores them. */
@@ -145,7 +145,7 @@ test('a dead provider is skipped while the live one still answers', async () => 
 
 test('an endpoint listed in the core config is offered too', async () => {
   const engine = await fakeEngine({ models: [{ id: 'voice-a', task: 'tts' }], voices: { 'voice-a': ['af_heart'] } })
-  const plugin = await mountAudio({ config: { core: { endpoints: [{ id: 'local', name: 'Local audio', baseURL: engine.baseURL }] } } })
+  const plugin = await mountAudio({ config: { speech: { endpoints: [{ id: 'local', name: 'Local audio', baseURL: engine.baseURL }] } } })
   try {
     const body = await (await fetch(`${plugin.origin}/tts/info`)).json()
     assert.deepEqual(body.servers.map((server) => server.id), ['local'])
@@ -217,9 +217,9 @@ test('the shared log records the discovery report of both directions', async () 
   try {
     await fetch(`${plugin.origin}/tts/info`)
     await fetch(`${plugin.origin}/stt/info`)
-    const body = await (await fetch(`${plugin.origin}/audio/log?tail=100&level=debug&component=core`)).json()
+    const body = await (await fetch(`${plugin.origin}/audio/log?tail=100&level=debug&component=speech`)).json()
     const discovered = body.entries.filter((entry) => entry.event === 'discovered')
-    assert.deepEqual(discovered.map((entry) => entry.detail.kind).sort(), ['stt', 'tts'], 'one discovery per direction, tagged core')
+    assert.deepEqual(discovered.map((entry) => entry.detail.kind).sort(), ['stt', 'tts'], 'one discovery per direction, tagged speech')
   } finally {
     await plugin.close()
     await engine.close()

@@ -43,7 +43,7 @@ async function reachable (baseURL) {
  * @returns The bundle origin plus a close handle.
  */
 function mountLive (providers = PROVIDERS, config = {}) {
-  return mountAudio({ providers, config: { core: { discoveryTtlMs: 0, ...(config.core ?? {}) }, ...config } })
+  return mountAudio({ providers, config: { speech: { discoveryTtlMs: 0, ...(config.speech ?? {}) }, ...config } })
 }
 
 before(async () => {
@@ -185,7 +185,7 @@ test('voices carry the tags the engine publishes in its catalog', async (t) => {
   } catch {
     return t.skip('no engine catalog on this machine')
   }
-  const plugin = await mountLive(PROVIDERS, { core: { voiceCatalog: catalog } })
+  const plugin = await mountLive(PROVIDERS, { speech: { voiceCatalog: catalog } })
   try {
     const info = await (await fetch(`${plugin.origin}/tts/info`)).json()
     const model = info.servers.find((row) => row.id === 'audio-cpp').models.find((row) => row.id === 'kokoro')

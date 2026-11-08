@@ -8,14 +8,14 @@
  *   GET  /stt/info       → providers that can transcribe, and every model they list
  *   POST /stt/transcribe → WAV in, { text } out, via <provider>/audio/transcriptions
  *
- * Discovery, the wire call, and the event log belong to the `speech-core` row and
- * arrive as the `audioProtocol` service; this row owns the dictation surface and
+ * Discovery, the wire call, and the event log belong to the `speech` row and
+ * arrive as the `speechAudio` service; this row owns the dictation surface and
  * its limits.
  */
 
 import z from '@deepseek-ai/schemastery'
 
-import { liveOptions, number } from '../lib/config.js'
+import { liveOptions, number } from '../lib/audio.js'
 import { bodyError, json, readBody, routes } from '../lib/http.js'
 
 /** Dictation defaults; no server, model, or language is assumed. */
@@ -55,7 +55,7 @@ export const Config = z.object({
 })
 
 /** Required Host services: routes and the bundle's protocol service. */
-export const inject = ['webServer', 'audioProtocol']
+export const inject = ['webServer', 'speechAudio']
 
 /**
  * Mount the dictation routes.
@@ -68,7 +68,7 @@ export function apply (ctx, config = {}) {
   const options = liveOptions(config, DEFAULTS, {
     maxAudioBytes: (value, fallback) => number(value, fallback, 1024, 512 * 1024 * 1024),
   })
-  const protocol = ctx.audioProtocol
+  const protocol = ctx.speechAudio
 
   /** Write one event to the bundle log, tagged as this component. */
   function note (level, event, detail) {

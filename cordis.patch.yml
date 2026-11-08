@@ -1,29 +1,20 @@
 # The layer this bundle contributes to a profile. Installing the package with
-# `dsh plugin --profile <name> add dsh-plugin-speech` composes these four rows, so
-# every component is active without hand-editing the profile's own patch file.
+# `dsh plugin --profile <name> add dsh-plugin-speech` composes these rows.
 #
-# One package, four components. Each row is an independent Loader entry with its
-# own switch on the Plugins page and its own module, so nothing shares
-# module-level state with its neighbours:
+#   speech       the audio engine (discovery and the wire calls), the shared
+#                /audio protocol routes, and the browser half; it provides the
+#                `speechAudio` service the two surface rows inject. `speech` MUST
+#                be the bare package name: the shell finds the browser half only
+#                from a row whose specifier is the package itself, never from a
+#                subpath row.
+#   speech-tts   /tts/info, /tts/speak and /tts/cast, the read-aloud surface
+#   speech-stt   /stt/info and /stt/transcribe, the dictation surface
 #
-#   speech-core   the OpenAI audio protocol: provider discovery, the wire calls,
-#                 the bundle's one event log (/audio/log), the component registry
-#   speech-tts    /tts/info, /tts/speak, /tts/cast — the read-aloud surface
-#   speech-stt    /stt/info, /stt/transcribe — the dictation surface
-#   speech-status /audio/status, /audio/echo — inventory and round-trip self-test
-#
-# The three surface rows inject the `audioProtocol` service provided by
-# speech-core; switching speech-core off leaves them waiting, they mount again as
-# soon as it is back.
-#
-# speech-core names the package itself (not a subpath) on purpose: the browser
-# half is discovered from the row module's package manifest, and only a row whose
-# specifier is the bare package name resolves to it — a subpath row is skipped.
-#
-# Machine-specific values (a voice catalog path, a fixed server) belong in the
-# profile's own patch, as an id-targeted override of these rows.
+# Switching speech-tts or speech-stt off answers 404 on its routes and leaves the
+# other direction untouched. Switching speech off leaves both surface rows
+# waiting for the engine, exactly as a dependency should.
 - insert:
-    - id: speech-core
+    - id: speech
       name: dsh-plugin-speech
 
     - id: speech-tts
@@ -31,6 +22,3 @@
 
     - id: speech-stt
       name: dsh-plugin-speech/stt
-
-    - id: speech-status
-      name: dsh-plugin-speech/status

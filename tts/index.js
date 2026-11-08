@@ -8,8 +8,8 @@
  *   POST /tts/speak   → { text, server?, model?, voice?, speed? } → audio/wav bytes
  *   GET/POST /tts/cast → the multi-voice experiment flag the Host mirrors
  *
- * Discovery, the wire call, and the event log belong to the `speech-core` row and
- * arrive as the `audioProtocol` service; this row owns the read-aloud surface,
+ * Discovery, the wire call, and the event log belong to the `speech` row and
+ * arrive as the `speechAudio` service; this row owns the read-aloud surface,
  * its preferences, and its audio cache.
  */
 
@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto'
 
 import z from '@deepseek-ai/schemastery'
 
-import { liveOptions, number, numbers } from '../lib/config.js'
+import { liveOptions, number, numbers } from '../lib/audio.js'
 import { bodyError, json, readJson, routes } from '../lib/http.js'
 
 /** Read-aloud defaults; no server, model, or voice is assumed. */
@@ -74,7 +74,7 @@ export const Config = z.object({
 })
 
 /** Required Host services: routes and the bundle's protocol service. */
-export const inject = ['webServer', 'audioProtocol']
+export const inject = ['webServer', 'speechAudio']
 
 /**
  * Mount the read-aloud routes and the multi-voice experiment.
@@ -90,7 +90,7 @@ export function apply (ctx, config = {}) {
     maxChars: (value, fallback) => number(value, fallback, 1, 20000),
     cacheBytes: (value, fallback) => number(value, fallback, 0, 512 * 1024 * 1024),
   })
-  const protocol = ctx.audioProtocol
+  const protocol = ctx.speechAudio
 
   /** Synthesized-audio cache: key → audio. Insertion order doubles as LRU order. */
   const cache = new Map()

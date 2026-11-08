@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "Audio",
-    "description": "Speech for the Web GUI in one bundle, as four switchable components: the shared OpenAI audio protocol, read-aloud, dictation, and a component inventory"
-  }
-}

@@ -36,9 +36,12 @@ waiting for the engine.
 Browser behaviour:
 
 - Listen on each finalized reply; autoplay for completed turns; a transport bar
-  with pause/resume and stop; the sentence being read; a settings panel for
-  server, model, voice, and rate. Turning any preference off never hides the
-  transport.
+  that shows the live waveform of the audio being played the same way the
+  dictation bar shows the microphone, with pause/resume, elapsed time, and stop;
+  the spoken sentence is highlighted in the reply (Custom Highlight API, with a
+  data-attribute fallback), and a settings panel carries server, model, voice,
+  rate, autoplay, and the highlight switch. Highlighting is paint-only: turning
+  it off never hides the transport.
 - Dictation records in the page, transcodes to 16 kHz mono WAV, and inserts the
   transcript at the caret it had when recording started. One take at a time; an
   unmount discards the take instead of transcribing it; a second stop cannot

@@ -179,6 +179,12 @@ test('cleanForSpeech strips Markdown structure', () => {
   assert.ok(text.includes('item bold and code and link'))
 })
 
+test('normalizeForSearch collapses whitespace like the DOM flattener', () => {
+  const { exports } = loadBundle()
+  assert.equal(exports.__internals.normalizeForSearch('  a\n b\t\t c  '), 'a b c')
+  assert.equal(exports.__internals.normalizeForSearch(''), '')
+})
+
 test('splitChunks bounds every group and keeps decimals', () => {
   const { exports } = loadBundle()
   const { splitChunks } = exports.__internals

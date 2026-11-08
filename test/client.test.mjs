@@ -977,6 +977,38 @@ test('the caption shows the sentence being read', async () => {
   dom.window.close()
 })
 
+test('the caption keeps its transport when highlighting is off', async () => {
+  const dom = makeDom()
+  const environment = makeEnvironment({ duration: 60 })
+  dom.window.localStorage.setItem('dsh.tts.settings.v1', JSON.stringify({ autoplay: true, highlight: false }))
+  const mod = loadBundle(dom, environment)
+  const registrations = []
+  const entries = [assistantEvent(2, 1, 'm-1', [{ type: 'text', text: 'A brand new answer. It has two sentences.' }])]
+  mod.apply(fakeContext(registrations, entries))
+  await settle()
+  const caption = registrations.find((row) => row.spec.id === 'tts-caption')
+  const container = dom.window.document.getElementById('root')
+  const restore = useDom(dom)
+  const root = ReactDOMClient.createRoot(container)
+  const t = (key) => key
+  await act(async () => {
+    root.render(React.createElement(caption.component, { ...caption.injected, sessionId: 's1', t }))
+  })
+  const action = registrations.find((row) => row.spec.id === 'tts-listen')
+  await act(async () => {
+    action.injected.read('s1', 'm-1')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  const strip = container.querySelector('.dsh-tts-player')
+  assert.ok(strip !== null, 'the transport survives the highlight switch')
+  assert.ok(strip.querySelector('.dsh-tts-seek') !== null, 'the seek bar is still there')
+  assert.equal(strip.querySelectorAll('.dsh-tts-pbtn').length, 3, 'previous, play/pause, next')
+  assert.equal(dom.window.document.querySelector('[data-dsh-tts-reading]'), null, 'nothing is painted in the reply')
+  await act(async () => { root.unmount() })
+  restore()
+  dom.window.close()
+})
+
 test('matches a sentence whose middle diverged from the domestic text', () => {
   const dom = makeDom()
   const body = dom.window.document.body

@@ -1,5 +1,5 @@
 /**
- * dsh-plugin-speech — the inventory component (`audio-status`).
+ * dsh-plugin-speech — the inventory component (`speech-status`).
  *
  * The row that makes the bundle's component structure visible and testable:
  *

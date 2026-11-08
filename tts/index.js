@@ -1,5 +1,5 @@
 /**
- * dsh-plugin-speech — the read-aloud component (`audio-tts`).
+ * dsh-plugin-speech — the read-aloud component (`speech-tts`).
  *
  * The browser never reaches a speech engine directly (no CORS, works from any
  * browser that can open the GUI, keeps engines on loopback):
@@ -8,7 +8,7 @@
  *   POST /tts/speak   → { text, server?, model?, voice?, speed? } → audio/wav bytes
  *   GET/POST /tts/cast → the multi-voice experiment flag the Host mirrors
  *
- * Discovery, the wire call, and the event log belong to the `audio-core` row and
+ * Discovery, the wire call, and the event log belong to the `speech-core` row and
  * arrive as the `audioProtocol` service; this row owns the read-aloud surface,
  * its preferences, and its audio cache.
  */

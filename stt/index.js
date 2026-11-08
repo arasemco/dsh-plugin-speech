@@ -1,5 +1,5 @@
 /**
- * dsh-plugin-speech — the dictation component (`audio-stt`).
+ * dsh-plugin-speech — the dictation component (`speech-stt`).
  *
  * Same shape as the read-aloud row, in the other direction: nothing is
  * transcribed here. The recording is forwarded to a provider that implements the
@@ -8,7 +8,7 @@
  *   GET  /stt/info       → providers that can transcribe, and every model they list
  *   POST /stt/transcribe → WAV in, { text } out, via <provider>/audio/transcriptions
  *
- * Discovery, the wire call, and the event log belong to the `audio-core` row and
+ * Discovery, the wire call, and the event log belong to the `speech-core` row and
  * arrive as the `audioProtocol` service; this row owns the dictation surface and
  * its limits.
  */

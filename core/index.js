@@ -1,5 +1,5 @@
 /**
- * dsh-plugin-speech — the protocol component (`audio-core`).
+ * dsh-plugin-speech — the protocol component (`speech-core`).
  *
  * Owns the machine-facing half of speech for the whole bundle: the discovery of
  * the OpenAI-compatible audio providers configured in the profile, the wire

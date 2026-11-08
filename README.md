@@ -14,25 +14,25 @@ while the machinery they share is written once.
 
 | Row id | Component | Owns |
 |---|---|---|
-| `audio-core` | Audio protocol | Discovery of the configured providers for each direction, the wire calls, `/audio/log`, the component registry |
-| `audio-tts` | Read replies aloud | `/tts/info`, `/tts/speak`, `/tts/cast`, the multi-voice prompt section |
-| `audio-stt` | Dictation | `/stt/info`, `/stt/transcribe` |
-| `audio-status` | Bundle inventory | `/audio/status` (mounted components, provider summary), `/audio/echo` (round-trip self-test) |
+| `speech-core` | Audio protocol | Discovery of the configured providers for each direction, the wire calls, `/audio/log`, the component registry |
+| `speech-tts` | Read replies aloud | `/tts/info`, `/tts/speak`, `/tts/cast`, the multi-voice prompt section |
+| `speech-stt` | Dictation | `/stt/info`, `/stt/transcribe` |
+| `speech-status` | Bundle inventory | `/audio/status` (mounted components, provider summary), `/audio/echo` (round-trip self-test) |
 
-`audio-core` names the package itself; the other three name subpaths
+`speech-core` names the package itself; the other three name subpaths
 (`dsh-plugin-speech/tts`, …). Each row is its own module file, so no module-level
 state is shared between components — the surfaces reach the protocol through the
-`audioProtocol` service that `audio-core` provides.
+`audioProtocol` service that `speech-core` provides.
 
 ## Layout
 
 One package, four row modules, and the shared modules they import:
 
 ```text
-core/index.js        audio-core    provides audioProtocol, mounts /audio/log
-tts/index.js         audio-tts     /tts/info, /tts/speak, /tts/cast
-stt/index.js         audio-stt     /stt/info, /stt/transcribe
-status/index.js      audio-status  /audio/status, /audio/echo
+core/index.js        speech-core    provides audioProtocol, mounts /audio/log
+tts/index.js         speech-tts     /tts/info, /tts/speak, /tts/cast
+stt/index.js         speech-stt     /stt/info, /stt/transcribe
+status/index.js      speech-status  /audio/status, /audio/echo
 lib/protocol.js      the engine: discovery, wire calls, event log, component registry
 lib/http.js          JSON responses, bounded bodies, the route-table dispatcher
 lib/config.js        the config readers every row clamps through
@@ -48,9 +48,9 @@ selection resolver for both bands.
 
 ## Components and their switches
 
-Each row is independent. Switch `audio-tts` off and the Listen control and
+Each row is independent. Switch `speech-tts` off and the Listen control and
 player disappear from the browser, `/tts/*` answers 404, and dictation keeps
-working untouched; switch `audio-core` off and the three consumers wait for the
+working untouched; switch `speech-core` off and the three consumers wait for the
 service, mounting again the moment it is back. The browser asks
 `/audio/status` once and mounts only the halves the Host lists — a failed probe
 mounts both rather than hiding UI.
@@ -85,7 +85,7 @@ only decides ordering.
 Discovery probes only endpoints on this machine or the local network — loopback,
 link-local, and RFC 1918/4193 addresses — because the probe spends the profile's
 credential on a provider configured for text. A remote engine is probed when the
-`audio-core` row lists it in `endpoints`, which is also how a non-provider audio
+`speech-core` row lists it in `endpoints`, which is also how a non-provider audio
 server is added. A server whose whole catalogue declares itself TTS ranks
 after the servers that may actually transcribe.
 
@@ -124,19 +124,19 @@ Nothing about this machine is baked into the package; machine-specific values
 belong in the profile's own patch, for example:
 
 ```yaml
-- id: audio-core
+- id: speech-core
   config:
     voiceCatalog:
       - /home/agent/stacks/ai/audio-cpp-server.json
     endpoints: []
-- id: audio-tts
+- id: speech-tts
   config:
     server: audio-cpp
     model: kokoro
     voice: af_heart
     speeds: [0.75, 1, 1.25, 1.5, 2]
     cacheBytes: 25165824
-- id: audio-stt
+- id: speech-stt
   config:
     server: ollama
     model: lfm3-audio:latest
@@ -145,10 +145,10 @@ belong in the profile's own patch, for example:
 
 | Row | Config | On the page |
 |---|---|---|
-| `audio-core` | `endpoints`, `discoveryTtlMs`, `failureTtlMs`, `probeTimeoutMs`, `logLimit`, `speakTimeoutMs`, `transcribeTimeoutMs`, `voiceCatalog` | voice catalog paths, discovery TTL, log size |
-| `audio-tts` | `server`, `model`, `voice`, `speed`, `speeds`, `maxChars`, `cacheBytes` | server, model, voice (from discovery), speed, max characters |
-| `audio-stt` | `server`, `model`, `language`, `maxAudioBytes` | server, model, language (from discovery), max recording size |
-| `audio-status` | `sample` | the round-trip sentence |
+| `speech-core` | `endpoints`, `discoveryTtlMs`, `failureTtlMs`, `probeTimeoutMs`, `logLimit`, `speakTimeoutMs`, `transcribeTimeoutMs`, `voiceCatalog` | voice catalog paths, discovery TTL, log size |
+| `speech-tts` | `server`, `model`, `voice`, `speed`, `speeds`, `maxChars`, `cacheBytes` | server, model, voice (from discovery), speed, max characters |
+| `speech-stt` | `server`, `model`, `language`, `maxAudioBytes` | server, model, language (from discovery), max recording size |
+| `speech-status` | `sample` | the round-trip sentence |
 
 A field left empty on the page is cleared from the user layer, so the row
 inherits its default again — that is what the Reset control does explicitly.

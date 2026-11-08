@@ -4,7 +4,7 @@
  * Loader composes in a profile.
  *
  * The four rows are applied in declaration order, the way the Loader does:
- * `audio-core` first (it provides `audioProtocol`), then whichever surface rows
+ * `speech-core` first (it provides `audioProtocol`), then whichever surface rows
  * the case asks for. A row that a case leaves out is simply never applied, which
  * is the same observable state as switching it off on the Plugins page.
  */

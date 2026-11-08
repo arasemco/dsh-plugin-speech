@@ -46,7 +46,7 @@ test('the package declares itself a bundle with a browser half', () => {
 })
 
 test('the patch inserts one row per component, with unique ids', () => {
-  assert.deepEqual(rows.map((row) => row.id), ['audio-core', 'audio-tts', 'audio-stt', 'audio-status'])
+  assert.deepEqual(rows.map((row) => row.id), ['speech-core', 'speech-tts', 'speech-stt', 'speech-status'])
   assert.equal(new Set(rows.map((row) => row.id)).size, rows.length, 'the webserver and Loader key by these ids')
 })
 
@@ -64,19 +64,19 @@ test('exactly one row names the bare package, which is what finds the browser ha
      bundle whose rows are all subpaths would ship a client half nobody mounts. */
   const bare = rows.filter((row) => row.name === manifest.name)
   assert.equal(bare.length, 1, 'one row must carry the package name')
-  assert.equal(bare[0].id, 'audio-core', 'and it is the component that owns the package root export')
+  assert.equal(bare[0].id, 'speech-core', 'and it is the component that owns the package root export')
   assert.equal(manifest.exports['.'], './core/index.js')
 })
 
 test('every component exposes apply and inject, and a display title', async () => {
   const expected = {
-    'audio-core': ['./core', './core/locale/en.json'],
-    'audio-tts': ['./tts', './tts/locale/en.json'],
-    'audio-stt': ['./stt', './stt/locale/en.json'],
-    'audio-status': ['./status', './status/locale/en.json'],
+    'speech-core': ['./core', './core/locale/en.json'],
+    'speech-tts': ['./tts', './tts/locale/en.json'],
+    'speech-stt': ['./stt', './stt/locale/en.json'],
+    'speech-status': ['./status', './status/locale/en.json'],
   }
   for (const [id, [modulePath, localePath]] of Object.entries(expected)) {
-    const subpath = id === 'audio-core' ? './core' : `./${id.slice('audio-'.length)}`
+    const subpath = id === 'speech-core' ? './core' : `./${id.slice('speech-'.length)}`
     assert.equal(manifest.exports[subpath], `${modulePath}/index.js`)
     const module = await import(new URL(`${modulePath}/index.js`, root))
     assert.equal(typeof module.apply, 'function', `${id} applies`)
@@ -180,13 +180,13 @@ test('the fields a configuration page edits are volatile, which is what publishe
   /* The browser half must edit exactly what the schema publishes. */
   const client = readFileSync(new URL('lib/client.js', root), 'utf8')
   for (const [row, fields] of Object.entries(pageFields)) {
-    const start = client.indexOf(`rowId: 'audio-${row}'`)
-    assert.ok(start >= 0, `a page exists for audio-${row}`)
+    const start = client.indexOf(`rowId: 'speech-${row}'`)
+    assert.ok(start >= 0, `a page exists for speech-${row}`)
     const rest = client.slice(start)
     const end = rest.indexOf('rowId:', 10)
     const block = end < 0 ? rest : rest.slice(0, end)
     const listed = [...block.matchAll(/name: '([a-zA-Z]+)'/g)].map((match) => match[1])
-    assert.deepEqual(listed, fields, `audio-${row}: the page shows exactly the volatile fields`)
+    assert.deepEqual(listed, fields, `speech-${row}: the page shows exactly the volatile fields`)
   }
 })
 
@@ -195,7 +195,7 @@ test('the browser half keys its configuration pages by this package name', () =>
   const declared = /const PKG_ID = '([^']+)'/.exec(client)
   assert.ok(declared !== null, 'the client declares the package it configures')
   assert.equal(declared[1], manifest.name, 'a page key is <package>#<row id>, so the name must match the manifest')
-  for (const rowId of ['audio-core', 'audio-tts', 'audio-stt', 'audio-status']) {
+  for (const rowId of ['speech-core', 'speech-tts', 'speech-stt', 'speech-status']) {
     assert.ok(client.includes(`rowId: '${rowId}'`), `a page exists for ${rowId}`)
     assert.ok(patch.includes(`id: ${rowId}`), `the patch declares ${rowId}`)
   }

@@ -1,5 +1,5 @@
 /**
- * Discovery rules of the `audio-core` row against fake engines: which configured
+ * Discovery rules of the `speech-core` row against fake engines: which configured
  * providers become speech servers for each direction, how their models and
  * voices are read, and what happens when a provider is down or is not a speech
  * server at all. The surface rows only forward what this report says.

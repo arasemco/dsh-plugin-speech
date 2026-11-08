@@ -1734,10 +1734,10 @@ test('registers one Plugins-screen configuration page per Host row', async () =>
   mod.apply(fakeContext(registrations, []))
   await settle()
   assert.deepEqual(pages(registrations).map((row) => row.spec.key), [
-    `${mod.__internals.PKG}#audio-core`,
-    `${mod.__internals.PKG}#audio-tts`,
-    `${mod.__internals.PKG}#audio-stt`,
-    `${mod.__internals.PKG}#audio-status`,
+    `${mod.__internals.PKG}#speech-core`,
+    `${mod.__internals.PKG}#speech-tts`,
+    `${mod.__internals.PKG}#speech-stt`,
+    `${mod.__internals.PKG}#speech-status`,
   ], 'the key is exactly what the plugin manager dispatches')
   assert.equal(mod.__internals.PKG, 'dsh-plugin-speech')
   dom.window.close()
@@ -1749,7 +1749,7 @@ test('a configuration page renders its fields and writes them back', async () =>
   const registrations = []
   mod.apply(fakeContext(registrations, []))
   await settle()
-  const page = pages(registrations).find((row) => row.spec.key.endsWith('#audio-tts'))
+  const page = pages(registrations).find((row) => row.spec.key.endsWith('#speech-tts'))
   const calls = []
   const form = {
     state: {
@@ -1800,7 +1800,7 @@ test('the status page edits its sample sentence and reports a refusal', async ()
   const registrations = []
   mod.apply(fakeContext(registrations, []))
   await settle()
-  const page = pages(registrations).find((row) => row.spec.key.endsWith('#audio-status'))
+  const page = pages(registrations).find((row) => row.spec.key.endsWith('#speech-status'))
   const calls = []
   const form = {
     state: {
@@ -1831,7 +1831,7 @@ test('a configuration page says so when its component is switched off', async ()
   const registrations = []
   mod.apply(fakeContext(registrations, []))
   await settle()
-  const page = pages(registrations).find((row) => row.spec.key.endsWith('#audio-core'))
+  const page = pages(registrations).find((row) => row.spec.key.endsWith('#speech-core'))
   const { container, root, restore } = await renderConfigPage(dom, page, undefined)
   assert.match(container.textContent, /config\.unavailable/)
   await act(async () => { root.unmount() })

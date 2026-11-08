@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-speech",
   "description": "Read replies aloud and dictate prompts: OpenAI-compatible speech through the profile's configured model providers",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "main": "index.js",

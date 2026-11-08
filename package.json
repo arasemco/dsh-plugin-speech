@@ -1,0 +1,37 @@
+{
+  "name": "dsh-plugin-speech",
+  "description": "Read replies aloud and dictate prompts: OpenAI-compatible speech through the profile's configured model providers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./tts": "./tts/index.js",
+    "./stt": "./stt/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "tts/index.js",
+    "stt/index.js",
+    "lib/audio.js",
+    "lib/client.js",
+    "lib/http.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "dsh": "0.2.2-rc.1"
+  },
+  "license": "MIT"
+}

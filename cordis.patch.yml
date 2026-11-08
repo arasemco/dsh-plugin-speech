@@ -1,0 +1,23 @@
+# The layer this bundle contributes to a profile. Installing the package with
+# `dsh plugin --profile <name> add dsh-plugin-speech` composes these rows.
+#
+#   speech       the audio engine (discovery and the wire calls) and the browser
+#                half; it provides the `speechAudio` service the two surface rows
+#                inject. `speech` MUST be the bare package name: the shell finds
+#                the browser half only from a row whose specifier is the package
+#                itself, never from a subpath row.
+#   speech-tts   /tts/info and /tts/speak, the read-aloud surface
+#   speech-stt   /stt/info and /stt/transcribe, the dictation surface
+#
+# Switching speech-tts or speech-stt off answers 404 on its routes and leaves the
+# other direction untouched. Switching speech off leaves both surface rows
+# waiting for the engine, exactly as a dependency should.
+- insert:
+    - id: speech
+      name: dsh-plugin-speech
+
+    - id: speech-tts
+      name: dsh-plugin-speech/tts
+
+    - id: speech-stt
+      name: dsh-plugin-speech/stt
